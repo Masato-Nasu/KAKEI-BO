@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Receipt Book (Prototype)</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="topbar__left">
+        <button class="iconbtn" id="btnBack" aria-label="戻る" title="戻る">←</button>
+      </div>
+      <div class="topbar__title" id="topTitle">レシート</div>
+      <div class="topbar__right">
+        <button class="iconbtn" id="btnSettings" aria-label="設定" title="設定">⚙</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- CAPTURE -->
+      <section class="page" id="pageCapture">
+        <div class="card">
+          <div class="card__title">撮影 / 画像選択</div>
+          <div class="captureBox" id="capturePreview">
+            <div class="captureBox__hint">ここにプレビューが表示されます</div>
+          </div>
+
+          <div class="stack">
+            <label class="btn primary" for="fileInput">写真を撮る / 選ぶ</label>
+            <input id="fileInput" class="hidden" type="file" accept="image/*" capture="environment" />
+            <button class="btn" id="btnUseSample">サンプル（テキスト）で試す</button>
+          </div>
+
+          <div class="note">
+            ※このプロトタイプはまずUI/保存/ソート/カテゴリ学習の検証用です。<br>
+            OCRは<strong>テキスト貼り付け</strong>（またはサンプル）で疑似的に動かせます。
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">OCRテキスト（貼り付け / デモ）</div>
+          <textarea id="ocrText" class="textarea" placeholder="レシートの文字（OCR結果）をここに貼り付けてください。"></textarea>
+          <div class="row">
+            <button class="btn" id="btnParseText">解析して確認へ</button>
+            <button class="btn ghost" id="btnClearText">クリア</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONFIRM -->
+      <section class="page hidden" id="pageConfirm">
+        <div class="card" id="summaryCard">
+          <div class="card__title">確認</div>
+          <div class="summary">
+            <div class="summary__row">
+              <div class="summary__label">店名</div>
+              <div class="summary__value" id="sumStore">—</div>
+              <button class="textbtn" data-edit="store">編集</button>
+            </div>
+            <div class="summary__row">
+              <div class="summary__label">日付</div>
+              <div class="summary__value" id="sumDate">—</div>
+              <button class="textbtn" data-edit="date">編集</button>
+            </div>
+            <div class="summary__row">
+              <div class="summary__label">合計</div>
+              <div class="summary__value sumTotal" id="sumTotal">—</div>
+              <button class="textbtn" data-edit="total">編集</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">カテゴリ（案1：外飲み＝飲み代 / コンビニ酒＝食費）</div>
+          <div class="suggestRow">
+            <div class="suggestLabel">提案：</div>
+            <button class="chip chip--big" id="chipSuggested">—</button>
+            <div class="suggestMeta" id="suggestMeta"></div>
+          </div>
+          <div class="chipRow" id="chipRowAll"></div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">品目</div>
+          <div class="items" id="itemsList"></div>
+          <div class="row">
+            <button class="btn ghost" id="btnAddItem">品目を追加</button>
+            <button class="btn ghost" id="btnReparse">OCRテキスト再解析</button>
+          </div>
+        </div>
+
+        <div class="footerBar">
+          <button class="btn" id="btnDiscard">破棄</button>
+          <button class="btn primary" id="btnSave">保存</button>
+        </div>
+      </section>
+
+      <!-- LIST -->
+      <section class="page hidden" id="pageList">
+        <div class="card">
+          <div class="card__title">一覧</div>
+
+          <div class="row wrap">
+            <div class="seg">
+              <button class="seg__btn" data-range="this">今月</button>
+              <button class="seg__btn" data-range="last">先月</button>
+              <button class="seg__btn" data-range="all">全期間</button>
+            </div>
+
+            <select class="select" id="filterCategory"></select>
+
+            <div class="seg">
+              <button class="seg__btn" data-sort="date">日付</button>
+              <button class="seg__btn" data-sort="total">金額</button>
+              <button class="seg__btn" data-sort="store">店名</button>
+              <button class="seg__btn" data-sort="category">カテゴリ</button>
+            </div>
+          </div>
+
+          <div class="totals" id="totalsBox"></div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">明細</div>
+          <div class="receipts" id="receiptList"></div>
+        </div>
+
+        <div class="footerBar">
+          <button class="btn" id="btnExport">CSVエクスポート</button>
+          <button class="btn primary" id="btnNew">新規（撮影）</button>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page hidden" id="pageSettings">
+        <div class="card">
+          <div class="card__title">設定（ローカル）</div>
+          <div class="row wrap">
+            <button class="btn" id="btnResetLearning">店→カテゴリ学習をリセット</button>
+            <button class="btn" id="btnDeleteAll">全データ削除</button>
+          </div>
+          <div class="note">
+            すべて端末内（LocalStorage）に保存されます。クラウド送信はしません。
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Mini bar -->
+    <div class="miniBar hidden" id="miniBar">
+      <div class="miniBar__store" id="miniStore">—</div>
+      <div class="miniBar__total" id="miniTotal">—</div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal hidden" id="modal">
+      <div class="modal__backdrop"></div>
+      <div class="modal__panel" role="dialog" aria-modal="true">
+        <div class="modal__title" id="modalTitle">編集</div>
+        <div class="modal__body" id="modalBody"></div>
+        <div class="modal__actions">
+          <button class="btn" id="modalCancel">キャンセル</button>
+          <button class="btn primary" id="modalOk">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast hidden" id="toast">
+      <span id="toastMsg">更新しました</span>
+      <button class="toast__undo" id="toastUndo">元に戻す</button>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+  </script>
+</body>
+</html>
