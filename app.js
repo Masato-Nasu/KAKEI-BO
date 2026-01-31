@@ -5,6 +5,7 @@
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 let captureImageDataUrl = null;
+let _lastPickedFileMeta = null;
 let _currentObjectUrl = null;
 
 let _ocrWorker = null;
@@ -493,6 +494,18 @@ function gotoCapture(){
   navStack = ["capture"];
   showPage("capture");
   dbg("init: binding listeners");
+
+try{
+  const pickBtn = el("btnPickImage");
+  const fi = el("fileInput");
+  if(pickBtn && fi){
+    pickBtn.addEventListener("click", ()=>{
+      dbg("btnPickImage click");
+      try{ fi.click(); }catch(e){ dbg("fileInput.click failed: " + (e.message||String(e))); }
+    });
+  }
+}catch(e){}
+
   try{ const c = el("btnCancelOcr"); if(c) c.disabled = true; }catch(e){}
 }
 
@@ -916,14 +929,29 @@ function setCapturePreviewFromDataUrl(dataUrl){
   const box = el("capturePreview");
   if(!box) return;
   box.innerHTML = "";
+
   const img = document.createElement("img");
+  img.alt = "receipt preview";
+  img.loading = "eager";
+  img.onerror = ()=>{
+    const meta = _lastPickedFileMeta ? `${_lastPickedFileMeta.type || "unknown"} / ${Math.round((_lastPickedFileMeta.size||0)/1024)}KB` : "";
+    box.innerHTML = `<div class="captureBox__hint">プレビュー表示に失敗しました。<br>${meta}<br>（HEIC/HEIF等の形式だと表示できない環境があります。iPhoneなら「設定→カメラ→フォーマット→互換性優先(JPEG)」で改善することがあります）</div>`;
+    setOcrStatus("画像形式が未対応の可能性があります（プレビュー失敗）");
+    dbg("preview img.onerror");
+  };
+  img.onload = ()=>{
+    dbg("preview img.onload");
+  };
   img.src = dataUrl;
+
   box.appendChild(img);
   captureImageDataUrl = dataUrl;
+
   const btn = el("btnRunOcr");
   if(btn) btn.disabled = false;
   setOcrStatus("OCR待機中（「画像からOCR」ボタンで実行できます）");
 }
+
 
 function createDraftFromText(text, imageDataUrl=null){
   const parsed = parseReceiptText(text);
@@ -1347,6 +1375,7 @@ el("fileInput").addEventListener("change", async (e)=>{
   const file = e.target.files && e.target.files[0];
   if(!file){ dbg("no file"); return; }
   dbg(`file: ${file.name || "(no name)"} ${file.type} ${file.size}`);
+  _lastPickedFileMeta = { name:file.name, type:file.type, size:file.size };
 
   // Revoke previous object URL to avoid memory leak
   try{
@@ -1356,7 +1385,7 @@ el("fileInput").addEventListener("change", async (e)=>{
 
   // 1) Show preview ASAP (no canvas, less memory)
   try{
-    setCapturePreviewFromDataUrl(_currentObjectUrl);
+    Promise.resolve().then(()=>setCapturePreviewFromDataUrl(_currentObjectUrl));
   }catch(err){
     console.error(err);
   }
@@ -1373,6 +1402,7 @@ el("fileInput").addEventListener("change", async (e)=>{
   }
   // Start as empty draft with image; user can paste text too
   createDraftEmpty(thumb);
+  try{ e.target.value = ""; }catch(e){}
 });
 
 el("btnParseText").addEventListener("click", ()=>{
@@ -1576,6 +1606,18 @@ function SAMPLE_TEXT(){
 (function init(){
   showPage("capture");
   dbg("init: binding listeners");
+
+try{
+  const pickBtn = el("btnPickImage");
+  const fi = el("fileInput");
+  if(pickBtn && fi){
+    pickBtn.addEventListener("click", ()=>{
+      dbg("btnPickImage click");
+      try{ fi.click(); }catch(e){ dbg("fileInput.click failed: " + (e.message||String(e))); }
+    });
+  }
+}catch(e){}
+
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
   setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing

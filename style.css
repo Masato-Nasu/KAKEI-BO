@@ -474,3 +474,5 @@ body{
 
 .btn.secondary{ background:#eee; color:#111; border:1px solid #ccc; }
 .btn.secondary:active{ transform: translateY(1px); }
+
+.hiddenInput{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
