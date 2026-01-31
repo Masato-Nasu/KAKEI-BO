@@ -476,3 +476,14 @@ body{
 .btn.secondary:active{ transform: translateY(1px); }
 
 .hiddenInput{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+
+.pickWrap{ position:relative; display:inline-block; width:100%; }
+.pickWrap > .btn{ width:100%; }
+.pickInput{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  opacity:0;
+  cursor:pointer;
+}

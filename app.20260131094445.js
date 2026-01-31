@@ -1578,3 +1578,25 @@ try{
     renderList();
   }
 })();
+
+
+/* cameraFixWatchdog: if programmatic click is blocked, native overlay input should still work */
+(function(){
+  const btn = document.getElementById("btnPickImage");
+  const fi = document.getElementById("fileInput");
+  if(!btn || !fi) return;
+  btn.addEventListener("click", ()=>{
+    const t0 = Date.now();
+    // If overlay input didn't receive tap (rare), attempt programmatic click
+    try{ fi.click(); }catch(e){}
+    setTimeout(()=>{
+      // If no file selected and no focus, give hint
+      if(!(fi.files && fi.files.length)){
+        try{
+          setOcrStatus("カメラが開かない場合：ブラウザの権限/別アプリのカメラ使用中/PCではファイル選択になります");
+        }catch(e){}
+      }
+    }, 800);
+  });
+})();
+
