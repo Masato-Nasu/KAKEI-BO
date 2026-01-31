@@ -33,3 +33,9 @@ PWAとしての挙動確認がしやすいです。
 ## 依存
 - Tesseract.js v5 (CDN)
   - https://github.com/naptha/tesseract.js
+
+
+## GitHub Pages でOCRが動かない場合
+- 回線やフィルタで **tessdata（言語データ）取得** がブロックされることがあります。
+- この版は `projectnaptha` がダメな場合に `raw.githubusercontent.com` / `cdn.jsdelivr.net` のミラーへ自動フォールバックします。
+- それでも失敗する場合は、まずOCR言語を **英語のみ** にして動作確認してください（日本語はデータが大きいです）。

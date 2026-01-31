@@ -3,59 +3,137 @@
 // OCR: demo via pasted text.
 
 // ---------- OCR (Tesseract.js v5, CDN) ----------
-const OCR_CDN_DIST = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist";
+// ---------- OCR (Tesseract.js v5, CDN) ----------
 let captureImageDataUrl = null;
 
 let _ocrWorker = null;
 let _ocrWorkerLang = null;
+let _ocrCdnBase = null;
 
 function setOcrStatus(text){
   const s = el("ocrStatus");
   if(s) s.textContent = text;
 }
+function setOcrDiag(text){
+  const d = el("ocrDiag");
+  if(d) d.textContent = "診断： " + text;
+}
 
-async function getOcrWorker(lang){
-  if(!window.Tesseract){
-    throw new Error("Tesseract.js が読み込めませんでした（ネットワーク or 読み込みブロックの可能性）。");
+async function waitForTesseract(timeoutMs=8000){
+  const t0 = Date.now();
+  while(Date.now() - t0 < timeoutMs){
+    if(window.Tesseract) return true;
+    await new Promise(r=>setTimeout(r, 120));
   }
+  return false;
+}
+
+function getCdnBase(){
+  // choose the base that matches loaded script if available
+  const bases = window.__tessCdnBaseList || [
+    "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist",
+    "https://unpkg.com/tesseract.js@5/dist"
+  ];
+  if(_ocrCdnBase) return _ocrCdnBase;
+  // If loaded-from is known, map to base
+  const loaded = window.__tessLoadedFrom || "";
+  if(loaded.includes("unpkg.com")) _ocrCdnBase = bases.find(b=>b.includes("unpkg.com")) || bases[1];
+  else _ocrCdnBase = bases[0];
+  return _ocrCdnBase;
+}
+
+async function quickFetchTest(url){
+  // best-effort: may fail due to CORS/network, but helpful as hint
+  try{
+    const res = await fetch(url, { mode: "cors" });
+    return res && res.ok;
+  }catch(e){
+    return false;
+  }
+}
+
+async function ensureWorker(lang){
+  const ok = await waitForTesseract(9000);
+  if(!ok){
+    throw new Error("Tesseract.js が読み込めませんでした（ネットワーク/拡張機能/社内フィルタの可能性）。");
+  }
+
+  const base = getCdnBase();
+  const workerPath = `${base}/worker.min.js`;
+  const corePath = `${base}/tesseract-core.wasm.js`;
+  const langPathCandidates = [
+  // 1) projectnaptha (fast when reachable)
+  "https://tessdata.projectnaptha.com/4.0.0_best_int",
+  // 2) raw github mirror (often reachable when projectnaptha is blocked)
+  "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_best_int",
+  // 3) jsDelivr github mirror
+  "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best_int"
+];
+let langPath = langPathCandidates[0];
+// pick first reachable by probing eng (light) OR jpn if selected
+const probeLang = (lang || "eng").split("+")[0] || "eng";
+for(const cand of langPathCandidates){
+  const probeUrl = `${cand}/${probeLang}.traineddata.gz`;
+  const ok = await quickFetchTest(probeUrl);
+  if(ok){
+    langPath = cand;
+    break;
+  }
+}
+
+
+  setOcrDiag(`lib=${(window.__tessLoadedFrom||"auto").split("/").slice(0,3).join("/")} / worker=${base.includes("unpkg")?"unpkg":"jsdelivr"} / lang=${(langPath||"").split("/").slice(0,3).join("/")}`);
+
+  // Lightweight connectivity hints (non-blocking)
+  const canWorker = await quickFetchTest(workerPath);
+  if(!canWorker) setOcrDiag("worker.min.js 取得に失敗（CDNブロックの可能性）");
+
   if(_ocrWorker && _ocrWorkerLang === lang) return _ocrWorker;
 
-  // If worker exists but language differs, reinitialize
+  // If exists but different language, terminate and recreate (more reliable than reinitialize across environments)
   if(_ocrWorker && _ocrWorkerLang && _ocrWorkerLang !== lang){
-    setOcrStatus(`OCR再初期化中（${lang}）…`);
-    await _ocrWorker.reinitialize(lang, 1);
-    _ocrWorkerLang = lang;
-    return _ocrWorker;
+    try{ await _ocrWorker.terminate(); }catch(e){}
+    _ocrWorker = null;
+    _ocrWorkerLang = null;
   }
 
-  setOcrStatus(`OCR初期化中（${lang}）…`);
-  _ocrWorker = await window.Tesseract.createWorker(lang, 1, {
-    workerPath: `${OCR_CDN_DIST}/worker.min.js`,
-    // Note: corePath/langPath are left default (worker decides).
-    logger: (m)=>{
-      if(!m) return;
-      if(typeof m.progress === "number"){
-        const p = Math.round(m.progress * 100);
-        setOcrStatus(`OCR: ${m.status}… ${p}%`);
-      }else if(m.status){
-        setOcrStatus(`OCR: ${m.status}`);
+  if(!_ocrWorker){
+    setOcrStatus(`OCR初期化中（${lang}）…`);
+    _ocrWorker = await window.Tesseract.createWorker({
+      workerPath,
+      corePath,
+      langPath,
+      logger: (m)=>{
+        if(!m) return;
+        if(typeof m.progress === "number"){
+          const p = Math.round(m.progress * 100);
+          setOcrStatus(`OCR: ${m.status}… ${p}%`);
+        }else if(m.status){
+          setOcrStatus(`OCR: ${m.status}`);
+        }
       }
-    }
-  });
+    });
+  }
+
+  // load / initialize language
+  setOcrStatus(`言語ロード中（${lang}）…`);
+  await _ocrWorker.loadLanguage(lang);
+  setOcrStatus(`言語初期化中（${lang}）…`);
+  await _ocrWorker.initialize(lang);
   _ocrWorkerLang = lang;
+
   setOcrStatus("OCR準備完了");
   return _ocrWorker;
 }
 
 async function runOcrFromImage(dataUrl, lang){
-  const worker = await getOcrWorker(lang);
+  const worker = await ensureWorker(lang);
   setOcrStatus("OCR解析中…");
   const ret = await worker.recognize(dataUrl);
   const text = (ret && ret.data && ret.data.text) ? ret.data.text : "";
   setOcrStatus("OCR完了（テキスト欄に反映しました）");
   return text;
 }
-
 
 const CATEGORIES = [
   { key: "food", label: "食費" },
@@ -1129,16 +1207,18 @@ el("btnRunOcr").addEventListener("click", async ()=>{
     const lang = el("ocrLang") ? el("ocrLang").value : "jpn+eng";
     el("btnRunOcr").disabled = true;
     setOcrStatus("OCR準備中…");
+    setOcrDiag("実行中");
     const text = await runOcrFromImage(captureImageDataUrl, lang);
     el("ocrText").value = (text || "").trim();
     el("btnRunOcr").disabled = false;
     if(!(text || "").trim()){
-      toast("OCR結果が空でした。撮影条件（影/傾き/距離）を見直すか、テキスト貼り付けで試してください。");
+      toast("OCR結果が空でした。撮影条件（影/傾き/距離）を見直すか、言語を英語にして試してください。");
     }
   }catch(err){
     el("btnRunOcr").disabled = false;
     setOcrStatus("OCRエラー");
-    toast("OCRに失敗しました。READMEの『http(s)で開く』を確認してください。");
+    setOcrDiag((err && err.message) ? err.message : "unknown error");
+    toast("OCRに失敗しました。①http(s)で開く ②別回線で試す ③言語を英語で試す（日本語は重い）④tessdata取得がブロックされている可能性");
     console.error(err);
   }
 });

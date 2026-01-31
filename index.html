@@ -46,6 +46,7 @@
   </select>
 </div>
 <div class="note" id="ocrStatus">OCR待機中（画像を選択してください）</div>
+          <div class="note" id="ocrDiag">診断：待機中</div>
 
 
           <div class="note">
@@ -189,10 +190,46 @@
     </div>
   </div>
 
-  <script src="./app.js"></script>
+  <script>
+  // Load Tesseract.js from CDN with fallback (jsDelivr -> unpkg)
+  (function(){
+    const sources = [
+      "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
+      "https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"
+    ];
+    window.__tessCdnBaseList = [
+      "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist",
+      "https://unpkg.com/tesseract.js@5/dist"
+    ];
+    function loadScript(src){
+      return new Promise((resolve, reject)=>{
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.onload = ()=> resolve(src);
+        s.onerror = ()=> reject(new Error("failed: " + src));
+        document.head.appendChild(s);
+      });
+    }
+    (async ()=>{
+      for(let i=0;i<sources.length;i++){
+        try{
+          const ok = await loadScript(sources[i]);
+          window.__tessLoadedFrom = sources[i];
+          break;
+        }catch(e){
+          // try next
+        }
+      }
+    })();
+  })();
+</script>
+<script src="./app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+      // NOTE: OCR/CDN検証中はキャッシュが混乱しやすいので、いったんSW登録をOFFにしています。
+      // 必要なら下の行のコメントを外してください。
+      // window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
   </script>
 </body>
