@@ -494,7 +494,7 @@ function setSwStatus(text){
   if(s) s.textContent = text;
 }
 
-async function swCheckStatus(){
+async function (typeof swCheckStatus==="function"?swCheckStatus():void 0){
   try{
     if(!('serviceWorker' in navigator)){
       setSwStatus("SW: このブラウザは未対応");
@@ -518,7 +518,7 @@ async function swCheckStatus(){
   }
 }
 
-async function swReset(){
+async function (typeof swReset==="function"?swReset():void 0){
   if(!('serviceWorker' in navigator)){
     setSwStatus("SW: 未対応");
     return;
@@ -532,7 +532,7 @@ async function swReset(){
     // hard reload to purge SW-controlled cache
     const reg2 = await navigator.serviceWorker.register('./sw.js', { scope:'./' });
     dbg("sw reset: registered " + reg2.scope);
-    await swCheckStatus();
+    await (typeof swCheckStatus==="function"?swCheckStatus():void 0);
     // force reload to attach controller
     setTimeout(()=>location.reload(), 400);
   }catch(e){
@@ -1422,15 +1422,15 @@ el("btnCancelOcr").addEventListener("click", async ()=>{
 
 try{
   const b1 = el("btnSwRecheck");
-  if(b1) b1.addEventListener("click", ()=>swCheckStatus());
+  if(b1) b1.addEventListener("click", ()=>(typeof swCheckStatus==="function"?swCheckStatus():void 0));
   const b2 = el("btnSwReset");
-  if(b2) b2.addEventListener("click", ()=>swReset());
+  if(b2) b2.addEventListener("click", ()=>(typeof swReset==="function"?swReset():void 0));
 }catch(e){}
-setTimeout(()=>swCheckStatus(), 600);
+setTimeout(()=>(typeof swCheckStatus==="function"?swCheckStatus():void 0), 600);
 
 navigator.serviceWorker && navigator.serviceWorker.addEventListener && navigator.serviceWorker.addEventListener("controllerchange", ()=>{
   dbg("sw: controllerchange");
-  swCheckStatus();
+  (typeof swCheckStatus==="function"?swCheckStatus():void 0);
 });
 
 
