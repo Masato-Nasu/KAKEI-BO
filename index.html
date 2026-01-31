@@ -229,7 +229,14 @@
     if ('serviceWorker' in navigator) {
       // NOTE: OCR/CDN検証中はキャッシュが混乱しやすいので、いったんSW登録をOFFにしています。
       // 必要なら下の行のコメントを外してください。
-      // window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+      window.addEventListener('load', async () => {
+        try{
+          const reg = await navigator.serviceWorker.register('./sw.js');
+          console.log('SW registered:', reg.scope);
+        }catch(e){
+          console.warn('SW register failed:', e);
+        }
+      });
     }
   </script>
 </body>
