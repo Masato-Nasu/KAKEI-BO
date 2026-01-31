@@ -1,0 +1,1 @@
+Put jpn.traineddata.gz here (download from https://tessdata.projectnaptha.com/4.0.0_fast/jpn.traineddata.gz )

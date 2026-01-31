@@ -1,0 +1,6 @@
+Place files from Tesseract.js v5 dist here:
+- tesseract.min.js
+- worker.min.js
+- tesseract-core.wasm.js
+- tesseract-core.wasm
+(Download from jsdelivr/unpkg or Tesseract.js releases)

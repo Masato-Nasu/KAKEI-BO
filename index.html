@@ -26,16 +26,14 @@
       <!-- CAPTURE -->
       <section class="page" id="pageCapture">
         <div class="card">
-          <div class="card__title">撮影 / 画像選択 <span id="buildTag" class="buildTag"></span></div>
+          <div class="card__title">撮影 / 画像選択</div>
           <div class="captureBox" id="capturePreview">
             <div class="captureBox__hint">ここにプレビューが表示されます</div>
           </div>
 
           <div class="stack">
-            <div class="pickWrap">
-  <button class="btn primary" id="btnPickImage" type="button">写真を撮る / 選ぶ</button>
-  <input id="fileInput" class="pickInput" type="file" accept="image/*" capture="environment">
-</div>
+            <label class="btn primary" for="fileInput">写真を撮る / 選ぶ</label>
+            <input id="fileInput" class="hidden" type="file" accept="image/*" capture="environment" />
             <button class="btn" id="btnUseSample">サンプル（テキスト）で試す</button>
           </div>
 
@@ -50,16 +48,10 @@
 </div>
 <div class="note" id="ocrStatus">OCR待機中（画像を選択してください）</div>
           <div class="note" id="ocrDiag">診断：待機中（初回は言語データDLで時間がかかります）</div>
-          <details class="note" id="debugPanel" style="margin-top:8px;">
-            <summary>デバッグ</summary>
-            <pre id="debugLog" style="white-space:pre-wrap; font-size:11px; line-height:1.35; margin:8px 0 0;"></pre>
-          </details>
-          <div class="note" id="swStatus">SW: 未確認</div>
-          <div class="row" style="gap:10px; align-items:center;">
-            <button class="btn secondary" id="btnSwRecheck">SW状態を確認</button>
-            <button class="btn secondary" id="btnSwReset">SW再登録</button>
+          <div class="row" style="margin-top:8px; gap:10px; flex-wrap:wrap;">
+            <button class="btn secondary" id="btnTestAssets">OCR資材の到達テスト</button>
+            <span class="note" id="assetStatus">テスト未実行</span>
           </div>
-
 
 
           <div class="note">
@@ -204,13 +196,15 @@
   </div>
 
   <script>
-  // Load Tesseract.js from CDN with fallback (jsDelivr -> unpkg)
+  // Load Tesseract.js with local-first strategy (vendor -> CDN fallback)
   (function(){
     const sources = [
+      "./vendor/tesseract/tesseract.min.js",
       "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js",
       "https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"
     ];
     window.__tessCdnBaseList = [
+      "./vendor/tesseract",
       "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist",
       "https://unpkg.com/tesseract.js@5/dist"
     ];
@@ -237,66 +231,13 @@
     })();
   })();
 </script>
-<script src="./app.20260131103633.js" defer></script>
+<script src="./app.js"></script>
   <script>
-  // Service Worker (PWA offline / update)
-  (function(){
-    if(!('serviceWorker' in navigator)) return;
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' })
-        .then((reg) => {
-          // Force update checks so newly deployed versions appear quickly
-          try{ reg.update(); }catch(e){}
-          console.log('SW registered:', reg.scope);
-        })
-        .catch((e) => console.warn('SW register failed:', e));
-    });
-  })();
-</script>
-
-<script>
-(function(){
-  if(!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.getRegistration().then(r=>{
-      console.log("SW: registration=", r ? (r.scope || "yes") : "none", "controller=", !!navigator.serviceWorker.controller);
-    });
-  });
-})();
-</script>
-
-<script>
-(function(){
-  // Build tag
-  var tag=document.getElementById('buildTag');
-  if(tag) tag.textContent = "build 20260131103633";
-  // Fallback preview: if app JS didn't bind, still show preview
-  function bindFallback(){
-    if(window.__KAKEIBO_FILE_BIND) return;
-    var fi=document.getElementById('fileInput');
-    var box=document.getElementById('capturePreview');
-    if(!fi || !box) return;
-    fi.addEventListener('change', function(){
-      try{
-        var file = fi.files && fi.files[0];
-        if(!file) return;
-        box.innerHTML = '<div class="captureBox__hint">プレビュー読み込み中…</div>';
-        var url = URL.createObjectURL(file);
-        var img = document.createElement('img');
-        img.alt = "receipt preview";
-        img.onload = function(){ try{ URL.revokeObjectURL(url); }catch(e){} };
-        img.onerror = function(){
-          box.innerHTML = '<div class="captureBox__hint">プレビュー表示に失敗しました（画像形式の可能性）</div>';
-        };
-        img.src = url;
-        box.innerHTML = '';
-        box.appendChild(img);
-      }catch(e){}
-    }, {passive:true});
-    console.log("Fallback preview bound (app binding missing)");
-  }
-  setTimeout(bindFallback, 1200);
-})();
-</script>
+    if ('serviceWorker' in navigator) {
+      // NOTE: OCR/CDN検証中はキャッシュが混乱しやすいので、いったんSW登録をOFFにしています。
+      // 必要なら下の行のコメントを外してください。
+      // // window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+  </script>
 </body>
 </html>

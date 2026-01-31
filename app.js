@@ -5,8 +5,6 @@
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 let captureImageDataUrl = null;
-let _lastPickedFileMeta = null;
-let _currentObjectUrl = null;
 
 let _ocrWorker = null;
 let _ocrWorkerLang = null;
@@ -21,6 +19,29 @@ function setOcrDiag(text){
   if(d) d.textContent = "診断： " + text;
 }
 
+async function testOcrAssets(){
+  const base = getCdnBase();
+  const targets = [
+    {name:"tesseract.min.js", url: (window.__tessLoadedFrom||"") },
+    {name:"worker.min.js", url: `${base}/worker.min.js`},
+    {name:"tesseract-core.wasm.js", url: `${base}/tesseract-core.wasm.js`},
+    // The wasm file is typically fetched by tesseract-core.wasm.js relatively; test common name:
+    {name:"tesseract-core.wasm", url: `${base}/tesseract-core.wasm`},
+  ];
+
+  const results = [];
+  for(const t of targets){
+    if(!t.url) continue;
+    try{
+      const res = await fetchWithTimeout(t.url, 8000);
+      results.push({name:t.name, ok: !!(res && res.ok), status: res ? res.status : "nores", url:t.url});
+    }catch(e){
+      results.push({name:t.name, ok:false, status:"error", url:t.url});
+    }
+  }
+  return results;
+}
+
 async function waitForTesseract(timeoutMs=8000){
   const t0 = Date.now();
   while(Date.now() - t0 < timeoutMs){
@@ -31,18 +52,19 @@ async function waitForTesseract(timeoutMs=8000){
 }
 
 function getCdnBase(){
-  // choose the base that matches loaded script if available
   const bases = window.__tessCdnBaseList || [
+    "./vendor/tesseract",
     "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist",
     "https://unpkg.com/tesseract.js@5/dist"
   ];
   if(_ocrCdnBase) return _ocrCdnBase;
-  // If loaded-from is known, map to base
   const loaded = window.__tessLoadedFrom || "";
-  if(loaded.includes("unpkg.com")) _ocrCdnBase = bases.find(b=>b.includes("unpkg.com")) || bases[1];
-  else _ocrCdnBase = bases[0];
+  if(loaded.startsWith("./vendor/")) _ocrCdnBase = bases[0];
+  else if(loaded.includes("unpkg.com")) _ocrCdnBase = bases.find(b=>String(b).includes("unpkg.com")) || bases[2];
+  else _ocrCdnBase = bases[1];
   return _ocrCdnBase;
 }
+
 
 async function fetchWithTimeout(url, ms=8000){
   const ctl = new AbortController();
@@ -83,10 +105,16 @@ async function ensureWorker(lang){
   const corePath = `${base}/tesseract-core.wasm.js`;
 
   const langPathCandidates = [
-    "https://tessdata.projectnaptha.com/4.0.0_fast",
-    "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_fast",
-    "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_fast"
-  ];
+  // 0) Same-origin (GitHub Pages) local copy (most reliable if external CDN is blocked)
+  `${location.origin}${location.pathname.replace(/\/[^\/]*$/, "")}/traineddata/4.0.0_fast`,
+  // 1) projectnaptha
+  "https://tessdata.projectnaptha.com/4.0.0_fast",
+  // 2) raw github mirror
+  "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_fast",
+  // 3) jsDelivr github mirror
+  "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_fast"
+];
+
 
   async function pickLangPath(testLang){
     for(const cand of langPathCandidates){
@@ -172,6 +200,56 @@ async function ensureWorker(lang){
 }
 
 
+
+  setOcrDiag(`lib=${(window.__tessLoadedFrom||"auto").split("/").slice(0,3).join("/")} / worker=${base.includes("unpkg")?"unpkg":"jsdelivr"} / lang=${(langPath||"").split("/").slice(0,3).join("/")}`);
+
+  // Lightweight connectivity hints (non-blocking)
+  const canWorker = await quickFetchTest(workerPath);
+  if(!canWorker) setOcrDiag("worker.min.js 取得に失敗（CDNブロックの可能性）");
+
+  if(_ocrWorker && _ocrWorkerLang === lang) return _ocrWorker;
+
+  // If exists but different language, terminate and recreate (more reliable than reinitialize across environments)
+  if(_ocrWorker && _ocrWorkerLang && _ocrWorkerLang !== lang){
+    try{ await _ocrWorker.terminate(); }catch(e){}
+    _ocrWorker = null;
+    _ocrWorkerLang = null;
+  }
+
+  if(!_ocrWorker){
+    setOcrStatus(`OCR初期化中（${lang}）…`);
+    _ocrWorker = await window.Tesseract.createWorker({
+      workerPath,
+      corePath,
+      langPath,
+      logger: (m)=>{
+        if(!m) return;
+        if(typeof m.progress === "number"){
+          const p = Math.round(m.progress * 100);
+          setOcrStatus(`OCR: ${m.status}… ${p}%`);
+        }else if(m.status){
+          setOcrStatus(`OCR: ${m.status}`);
+        }
+      }
+    });
+  }
+
+  // load / initialize language
+  setOcrStatus(`言語ロード中（${lang}）…`);
+  // Multi-lang is more reliable if we load each language separately first
+const langs = String(lang || "eng").split("+").filter(Boolean);
+for(const one of langs){
+  setOcrStatus(`言語ロード中（${one}）…`);
+  await _ocrWorker.loadLanguage(one);
+}
+setOcrStatus(`言語初期化中（${lang}）…`);
+await _ocrWorker.initialize(lang);
+
+  _ocrWorkerLang = lang;
+
+  setOcrStatus("OCR準備完了");
+  return _ocrWorker;
+}
 
 async function runOcrFromImage(dataUrl, lang){
   const worker = await withTimeout(ensureWorker(lang), 90000, "OCR初期化がタイムアウトしました（初回言語DLがブロック/遅延の可能性）。英語のみで確認してください。");
@@ -443,19 +521,6 @@ function gotoList(){
 function gotoCapture(){
   navStack = ["capture"];
   showPage("capture");
-  dbg("init: binding listeners");
-
-try{
-  const pickBtn = el("btnPickImage");
-  const fi = el("fileInput");
-  if(pickBtn && fi){
-    pickBtn.addEventListener("click", ()=>{
-      dbg("btnPickImage click");
-      try{ fi.click(); }catch(e){ dbg("fileInput.click failed: " + (e.message||String(e))); }
-    });
-  }
-}catch(e){}
-
   try{ const c = el("btnCancelOcr"); if(c) c.disabled = true; }catch(e){}
 }
 
@@ -471,79 +536,6 @@ function toast(msg, undoFn){
   clearTimeout(toast._t);
   toast._t = setTimeout(()=> el("toast").classList.add("hidden"), 3000);
 }
-
-function dbg(msg){
-  try{
-    const pre = document.getElementById("debugLog");
-    if(!pre) return;
-    const t = new Date().toISOString().slice(11,19);
-    pre.textContent += `[${t}] ${msg}\n`;
-  }catch(e){}
-}
-
-window.addEventListener("error", (e)=>{
-  dbg("ERROR: " + (e && e.message ? e.message : String(e)));
-});
-
-window.addEventListener("unhandledrejection", (e)=>{
-  dbg("PROMISE: " + (e && e.reason ? (e.reason.message || String(e.reason)) : "unknown"));
-
-
-function setSwStatus(text){
-  const s = document.getElementById("swStatus");
-  if(s) s.textContent = text;
-}
-
-async function swCheckStatus(){
-  try{
-    if(!('serviceWorker' in navigator)){
-      setSwStatus("SW: このブラウザは未対応");
-      return { supported:false };
-    }
-    const reg = await navigator.serviceWorker.getRegistration();
-    const ctrl = !!navigator.serviceWorker.controller;
-    if(!reg){
-      setSwStatus(`SW: 未登録（controller=${ctrl ? "yes":"no"}）`);
-      return { supported:true, registered:false, controller:ctrl };
-    }
-    const state = reg.active ? reg.active.state : (reg.installing ? reg.installing.state : (reg.waiting ? reg.waiting.state : "unknown"));
-    const scriptURL = (reg.active && reg.active.scriptURL) || (reg.installing && reg.installing.scriptURL) || (reg.waiting && reg.waiting.scriptURL) || "";
-    setSwStatus(`SW: 登録済 / state=${state} / controller=${ctrl ? "yes":"no"} / scope=${reg.scope}`);
-    dbg(`sw: script=${scriptURL}`);
-    return { supported:true, registered:true, controller:ctrl, scope:reg.scope, state, scriptURL };
-  }catch(e){
-    setSwStatus("SW: エラー（Console/デバッグ参照）");
-    dbg("swCheck error: " + (e && e.message ? e.message : String(e)));
-    return { supported:true, error:true };
-  }
-}
-
-async function swReset(){
-  if(!('serviceWorker' in navigator)){
-    setSwStatus("SW: 未対応");
-    return;
-  }
-  try{
-    setSwStatus("SW: 再登録中…");
-    const regs = await navigator.serviceWorker.getRegistrations();
-    for(const r of regs){
-      try{ await r.unregister(); }catch(e){}
-    }
-    // hard reload to purge SW-controlled cache
-    const reg2 = await navigator.serviceWorker.register('./sw.js', { scope:'./' });
-    dbg("sw reset: registered " + reg2.scope);
-    await swCheckStatus();
-    // force reload to attach controller
-    setTimeout(()=>location.reload(), 400);
-  }catch(e){
-    setSwStatus("SW: 再登録失敗（https/パス/キャッシュの可能性）");
-    dbg("swReset error: " + (e && e.message ? e.message : String(e)));
-  }
-}
-
-});
-
-
 
 function closeToast(){
   el("toast").classList.add("hidden");
@@ -877,31 +869,15 @@ function bumpRecentCategory(key){
 // ---------- Capture / draft creation ----------
 function setCapturePreviewFromDataUrl(dataUrl){
   const box = el("capturePreview");
-  if(!box) return;
   box.innerHTML = "";
-
   const img = document.createElement("img");
-  img.alt = "receipt preview";
-  img.loading = "eager";
-  img.onerror = ()=>{
-    const meta = _lastPickedFileMeta ? `${_lastPickedFileMeta.type || "unknown"} / ${Math.round((_lastPickedFileMeta.size||0)/1024)}KB` : "";
-    box.innerHTML = `<div class="captureBox__hint">プレビュー表示に失敗しました。<br>${meta}<br>（HEIC/HEIF等の形式だと表示できない環境があります。iPhoneなら「設定→カメラ→フォーマット→互換性優先(JPEG)」で改善することがあります）</div>`;
-    setOcrStatus("画像形式が未対応の可能性があります（プレビュー失敗）");
-    dbg("preview img.onerror");
-  };
-  img.onload = ()=>{
-    dbg("preview img.onload");
-  };
   img.src = dataUrl;
-
   box.appendChild(img);
   captureImageDataUrl = dataUrl;
-
   const btn = el("btnRunOcr");
   if(btn) btn.disabled = false;
   setOcrStatus("OCR待機中（「画像からOCR」ボタンで実行できます）");
 }
-
 
 function createDraftFromText(text, imageDataUrl=null){
   const parsed = parseReceiptText(text);
@@ -919,7 +895,7 @@ function createDraftFromText(text, imageDataUrl=null){
     sourceText: text || ""
   };
   currentReceiptDraft = draft;
-  // stay on capture
+  gotoConfirm();
 }
 
 function createDraftEmpty(imageDataUrl=null){
@@ -934,7 +910,7 @@ function createDraftEmpty(imageDataUrl=null){
     imageThumb: imageDataUrl || null,
     sourceText: ""
   };
-  // stay on capture
+  gotoConfirm();
 }
 
 // ---------- List ----------
@@ -1321,38 +1297,12 @@ el("btnBack").addEventListener("click", ()=> popPage());
 el("btnSettings").addEventListener("click", ()=> openSettings());
 
 el("fileInput").addEventListener("change", async (e)=>{
-  dbg("fileInput change fired");
   const file = e.target.files && e.target.files[0];
-  if(!file){ dbg("no file"); return; }
-  dbg(`file: ${file.name || "(no name)"} ${file.type} ${file.size}`);
-  _lastPickedFileMeta = { name:file.name, type:file.type, size:file.size };
-
-  // Revoke previous object URL to avoid memory leak
-  try{
-    if(_currentObjectUrl) URL.revokeObjectURL(_currentObjectUrl);
-  }catch(e){}
-  _currentObjectUrl = URL.createObjectURL(file);
-
-  // 1) Show preview ASAP (no canvas, less memory)
-  try{
-    Promise.resolve().then(()=>setCapturePreviewFromDataUrl(_currentObjectUrl));
-  }catch(err){
-    console.error(err);
-  }
-
-  // 2) Keep the image source for OCR (objectURL is fine)
-  captureImageDataUrl = _currentObjectUrl;
-
-  // 3) Create a small thumbnail for records (best effort)
-  let thumb = null;
-  try{
-    thumb = await fileToDataUrl(file, 700);
-  }catch(err){
-    console.warn("thumbnail failed", err);
-  }
+  if(!file) return;
+  const dataUrl = await fileToDataUrl(file, 800);
+  setCapturePreviewFromDataUrl(dataUrl);
   // Start as empty draft with image; user can paste text too
-  createDraftEmpty(thumb);
-  try{ e.target.value = ""; }catch(e){}
+  createDraftEmpty(dataUrl);
 });
 
 el("btnParseText").addEventListener("click", ()=>{
@@ -1420,20 +1370,6 @@ el("btnCancelOcr").addEventListener("click", async ()=>{
 });
 
 
-try{
-  const b1 = el("btnSwRecheck");
-  if(b1) b1.addEventListener("click", ()=>swCheckStatus());
-  const b2 = el("btnSwReset");
-  if(b2) b2.addEventListener("click", ()=>swReset());
-}catch(e){}
-setTimeout(()=>swCheckStatus(), 600);
-
-navigator.serviceWorker && navigator.serviceWorker.addEventListener && navigator.serviceWorker.addEventListener("controllerchange", ()=>{
-  dbg("sw: controllerchange");
-  swCheckStatus();
-});
-
-
 el("summaryCard").addEventListener("click", (e)=>{
   const b = e.target.closest("[data-edit]");
   if(!b) return;
@@ -1491,37 +1427,16 @@ el("btnDeleteAll").addEventListener("click", ()=>{
 
 // ---------- Helpers ----------
 async function fileToDataUrl(file, maxSize=900){
-  // Downscale for storage/preview thumbnails (OCR can use objectURL)
-  let bmp = null;
-  try{
-    if("createImageBitmap" in window){
-      bmp = await createImageBitmap(file);
-    }
-  }catch(e){
-    bmp = null;
-  }
-
-  let w, h, drawSrc;
-  if(bmp){
-    w = bmp.width; h = bmp.height; drawSrc = bmp;
-  }else{
-    const img = await loadImage(URL.createObjectURL(file));
-    w = img.width; h = img.height; drawSrc = img;
-  }
-
-  const fit = fitContain(w, h, maxSize, maxSize);
+  const img = await loadImage(URL.createObjectURL(file));
+  const { w, h } = fitContain(img.width, img.height, maxSize, maxSize);
   const canvas = document.createElement("canvas");
-  canvas.width = fit.w; canvas.height = fit.h;
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(drawSrc, 0, 0, fit.w, fit.h);
-
-  // cleanup
-  try{ if(drawSrc && drawSrc.src && String(drawSrc.src).startsWith("blob:")) URL.revokeObjectURL(drawSrc.src); }catch(e){}
-  try{ if(bmp && bmp.close) bmp.close(); }catch(e){}
-
-  return canvas.toDataURL("image/jpeg", 0.82);
+  ctx.drawImage(img, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+  URL.revokeObjectURL(img.src);
+  return dataUrl;
 }
-
 
 function loadImage(src){
   return new Promise((resolve, reject)=>{
@@ -1555,19 +1470,6 @@ function SAMPLE_TEXT(){
 // init
 (function init(){
   showPage("capture");
-  dbg("init: binding listeners");
-
-try{
-  const pickBtn = el("btnPickImage");
-  const fi = el("fileInput");
-  if(pickBtn && fi){
-    pickBtn.addEventListener("click", ()=>{
-      dbg("btnPickImage click");
-      try{ fi.click(); }catch(e){ dbg("fileInput.click failed: " + (e.message||String(e))); }
-    });
-  }
-}catch(e){}
-
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
   setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing
@@ -1577,4 +1479,25 @@ try{
     showPage("list");
     renderList();
   }
+})();
+
+(function bindAssetTest(){
+  const btn = el("btnTestAssets");
+  if(!btn) return;
+  btn.addEventListener("click", async ()=>{
+    try{
+      el("assetStatus").textContent = "テスト中…";
+      const rs = await testOcrAssets();
+      const okAll = rs.every(x=>x.ok);
+      const lines = rs.map(x=>`${x.ok?"OK":"NG"} ${x.name} (${x.status})`).join(" / ");
+      el("assetStatus").textContent = (okAll ? "OK: " : "NG: ") + lines;
+      if(!okAll){
+        toast("OCR資材の一部が取得できません。READMEの『vendor同梱』を試してください。");
+      }
+      console.log("asset test", rs);
+    }catch(e){
+      el("assetStatus").textContent = "テスト失敗";
+      console.error(e);
+    }
+  });
 })();
