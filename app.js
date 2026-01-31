@@ -492,6 +492,7 @@ function gotoList(){
 function gotoCapture(){
   navStack = ["capture"];
   showPage("capture");
+  dbg("init: binding listeners");
   try{ const c = el("btnCancelOcr"); if(c) c.disabled = true; }catch(e){}
 }
 
@@ -507,6 +508,25 @@ function toast(msg, undoFn){
   clearTimeout(toast._t);
   toast._t = setTimeout(()=> el("toast").classList.add("hidden"), 3000);
 }
+
+function dbg(msg){
+  try{
+    const pre = document.getElementById("debugLog");
+    if(!pre) return;
+    const t = new Date().toISOString().slice(11,19);
+    pre.textContent += `[${t}] ${msg}\n`;
+  }catch(e){}
+}
+
+window.addEventListener("error", (e)=>{
+  dbg("ERROR: " + (e && e.message ? e.message : String(e)));
+});
+
+window.addEventListener("unhandledrejection", (e)=>{
+  dbg("PROMISE: " + (e && e.reason ? (e.reason.message || String(e.reason)) : "unknown"));
+});
+
+
 
 function closeToast(){
   el("toast").classList.add("hidden");
@@ -867,7 +887,7 @@ function createDraftFromText(text, imageDataUrl=null){
     sourceText: text || ""
   };
   currentReceiptDraft = draft;
-  gotoConfirm();
+  // stay on capture
 }
 
 function createDraftEmpty(imageDataUrl=null){
@@ -882,7 +902,7 @@ function createDraftEmpty(imageDataUrl=null){
     imageThumb: imageDataUrl || null,
     sourceText: ""
   };
-  gotoConfirm();
+  // stay on capture
 }
 
 // ---------- List ----------
@@ -1269,8 +1289,10 @@ el("btnBack").addEventListener("click", ()=> popPage());
 el("btnSettings").addEventListener("click", ()=> openSettings());
 
 el("fileInput").addEventListener("change", async (e)=>{
+  dbg("fileInput change fired");
   const file = e.target.files && e.target.files[0];
-  if(!file) return;
+  if(!file){ dbg("no file"); return; }
+  dbg(`file: ${file.name || "(no name)"} ${file.type} ${file.size}`);
 
   // Revoke previous object URL to avoid memory leak
   try{
@@ -1485,6 +1507,7 @@ function SAMPLE_TEXT(){
 // init
 (function init(){
   showPage("capture");
+  dbg("init: binding listeners");
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
   setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing
