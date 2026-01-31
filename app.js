@@ -1,4 +1,5 @@
 // Receipt Book (Prototype)
+const BUILD_ID = "build-20260131-083942";
 // Focus: UI flow, local storage, sorting/filter, category suggestion (Plan 1), store learning.
 // OCR: demo via pasted text.
 
@@ -386,6 +387,7 @@ function popPage(){
 
 function openSettings(){
   pushPage("settings");
+  try{ setBuildLabel(); }catch(e){}
 }
 
 function gotoList(){
@@ -396,6 +398,8 @@ function gotoList(){
 function gotoCapture(){
   navStack = ["capture"];
   showPage("capture");
+  try{ setBuildLabel(); }catch(e){}
+  console.log("ReceiptBook", BUILD_ID);
 }
 
 function gotoConfirm(){
@@ -721,6 +725,25 @@ function openCategoryTray(itemIdx){
 function labelOf(key){
   const c = CATEGORIES.find(x=>x.key===key);
   return c ? c.label : "未分類";
+}
+
+
+function setBuildLabel(){
+  const host = location.host || "(file)";
+  const url = location.href.split("#")[0];
+  const diag = document.getElementById("ocrDiag");
+  // keep existing diag for OCR; build label goes to settings note if present
+  const settings = document.getElementById("pageSettings");
+  if(settings){
+    let p = document.getElementById("buildInfo");
+    if(!p){
+      p = document.createElement("div");
+      p.id = "buildInfo";
+      p.className = "note";
+      settings.querySelector(".card")?.appendChild(p);
+    }
+    p.textContent = `Build: ${BUILD_ID} / host: ${host}`;
+  }
 }
 
 // recent categories stored in localStorage
@@ -1324,6 +1347,8 @@ function SAMPLE_TEXT(){
 // init
 (function init(){
   showPage("capture");
+  try{ setBuildLabel(); }catch(e){}
+  console.log("ReceiptBook", BUILD_ID);
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
   setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing
