@@ -5,6 +5,7 @@
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 // ---------- OCR (Tesseract.js v5, CDN) ----------
 let captureImageDataUrl = null;
+let _currentObjectUrl = null;
 
 let _ocrWorker = null;
 let _ocrWorkerLang = null;
@@ -839,6 +840,7 @@ function bumpRecentCategory(key){
 // ---------- Capture / draft creation ----------
 function setCapturePreviewFromDataUrl(dataUrl){
   const box = el("capturePreview");
+  if(!box) return;
   box.innerHTML = "";
   const img = document.createElement("img");
   img.src = dataUrl;
@@ -1269,10 +1271,32 @@ el("btnSettings").addEventListener("click", ()=> openSettings());
 el("fileInput").addEventListener("change", async (e)=>{
   const file = e.target.files && e.target.files[0];
   if(!file) return;
-  const dataUrl = await fileToDataUrl(file, 800);
-  setCapturePreviewFromDataUrl(dataUrl);
+
+  // Revoke previous object URL to avoid memory leak
+  try{
+    if(_currentObjectUrl) URL.revokeObjectURL(_currentObjectUrl);
+  }catch(e){}
+  _currentObjectUrl = URL.createObjectURL(file);
+
+  // 1) Show preview ASAP (no canvas, less memory)
+  try{
+    setCapturePreviewFromDataUrl(_currentObjectUrl);
+  }catch(err){
+    console.error(err);
+  }
+
+  // 2) Keep the image source for OCR (objectURL is fine)
+  captureImageDataUrl = _currentObjectUrl;
+
+  // 3) Create a small thumbnail for records (best effort)
+  let thumb = null;
+  try{
+    thumb = await fileToDataUrl(file, 700);
+  }catch(err){
+    console.warn("thumbnail failed", err);
+  }
   // Start as empty draft with image; user can paste text too
-  createDraftEmpty(dataUrl);
+  createDraftEmpty(thumb);
 });
 
 el("btnParseText").addEventListener("click", ()=>{
@@ -1397,16 +1421,37 @@ el("btnDeleteAll").addEventListener("click", ()=>{
 
 // ---------- Helpers ----------
 async function fileToDataUrl(file, maxSize=900){
-  const img = await loadImage(URL.createObjectURL(file));
-  const { w, h } = fitContain(img.width, img.height, maxSize, maxSize);
+  // Downscale for storage/preview thumbnails (OCR can use objectURL)
+  let bmp = null;
+  try{
+    if("createImageBitmap" in window){
+      bmp = await createImageBitmap(file);
+    }
+  }catch(e){
+    bmp = null;
+  }
+
+  let w, h, drawSrc;
+  if(bmp){
+    w = bmp.width; h = bmp.height; drawSrc = bmp;
+  }else{
+    const img = await loadImage(URL.createObjectURL(file));
+    w = img.width; h = img.height; drawSrc = img;
+  }
+
+  const fit = fitContain(w, h, maxSize, maxSize);
   const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
+  canvas.width = fit.w; canvas.height = fit.h;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-  URL.revokeObjectURL(img.src);
-  return dataUrl;
+  ctx.drawImage(drawSrc, 0, 0, fit.w, fit.h);
+
+  // cleanup
+  try{ if(drawSrc && drawSrc.src && String(drawSrc.src).startsWith("blob:")) URL.revokeObjectURL(drawSrc.src); }catch(e){}
+  try{ if(bmp && bmp.close) bmp.close(); }catch(e){}
+
+  return canvas.toDataURL("image/jpeg", 0.82);
 }
+
 
 function loadImage(src){
   return new Promise((resolve, reject)=>{
