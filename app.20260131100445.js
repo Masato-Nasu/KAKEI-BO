@@ -483,6 +483,18 @@ function dbg(msg){
   }catch(e){}
 }
 
+function dumpState(tag){
+  try{
+    const fi = el("fileInput");
+    const btn = el("btnRunOcr");
+    const files = fi && fi.files ? fi.files.length : 0;
+    const name = (fi && fi.files && fi.files[0]) ? (fi.files[0].name || "(no name)") : "";
+    const type = (fi && fi.files && fi.files[0]) ? (fi.files[0].type || "") : "";
+    const size = (fi && fi.files && fi.files[0]) ? fi.files[0].size : 0;
+    dbg(`[state ${tag}] files=${files} ${name} ${type} ${size} captureSet=${!!captureImageDataUrl} btnDisabled=${btn ? btn.disabled : "na"}`);
+  }catch(e){}
+}
+
 /* --- SW diagnostics (safe) --- */
 function setSwStatus(text){
   try{ const s=document.getElementById("swStatus"); if(s) s.textContent=text; }catch(e){}
@@ -1370,6 +1382,17 @@ el("fileInput").addEventListener("change", async (e)=>{
 
   // 2) Keep the image source for OCR (objectURL is fine)
   captureImageDataUrl = _currentObjectUrl;
+  dumpState('after-pick');
+  // AUTO_OCR: start OCR automatically so it never stays at '待機中'
+  try{
+    setOcrStatus('画像選択完了 → 自動でOCRを開始します');
+    const btnRun = el('btnRunOcr');
+    if(btnRun){
+      btnRun.disabled = false;
+      setTimeout(()=>{ try{ dbg('AUTO_OCR: click btnRunOcr'); btnRun.click(); }catch(e){} }, 350);
+    }
+  }catch(e){}
+
 
   // 3) Create a small thumbnail for records (best effort)
   let thumb = null;
@@ -1403,6 +1426,9 @@ el("btnUseSample").addEventListener("click", ()=>{
 });
 
 el("btnRunOcr").addEventListener("click", async ()=>{
+  dbg("btnRunOcr click");
+  dumpState('before-ocr');
+
   try{
     if(!captureImageDataUrl){
       toast("先に画像を選択してください。");
@@ -1597,7 +1623,7 @@ try{
 }catch(e){}
 
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
-  setOcrStatus("OCR待機中（画像を選択してください）");
+  setOcrStatus("待機中：まず「写真を撮る / 選ぶ」で画像を選択してください");
   // open list if existing
   const db = loadDB();
   if((db.receipts||[]).length){
