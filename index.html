@@ -235,7 +235,7 @@
     })();
   })();
 </script>
-<script src="./app.js" defer></script>
+<script src="./app.20260131094445.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {
       // NOTE: OCR/CDN検証中はキャッシュが混乱しやすいので、いったんSW登録をOFFにしています。
@@ -243,5 +243,17 @@
       // window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
   </script>
+
+<script>
+(function(){
+  if(!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.getRegistration().then(r=>{
+      console.log("SW: registration=", r ? (r.scope || "yes") : "none", "controller=", !!navigator.serviceWorker.controller);
+    });
+  });
+})();
+</script>
+
 </body>
 </html>
