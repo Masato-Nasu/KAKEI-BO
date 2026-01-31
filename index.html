@@ -239,12 +239,20 @@
 </script>
 <script src="./app.20260131094445.js" defer></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      // NOTE: OCR/CDN検証中はキャッシュが混乱しやすいので、いったんSW登録をOFFにしています。
-      // 必要なら下の行のコメントを外してください。
-      // window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
-    }
-  </script>
+  // Service Worker (PWA offline / update)
+  (function(){
+    if(!('serviceWorker' in navigator)) return;
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then((reg) => {
+          // Force update checks so newly deployed versions appear quickly
+          try{ reg.update(); }catch(e){}
+          console.log('SW registered:', reg.scope);
+        })
+        .catch((e) => console.warn('SW register failed:', e));
+    });
+  })();
+</script>
 
 <script>
 (function(){
