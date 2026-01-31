@@ -524,6 +524,60 @@ window.addEventListener("error", (e)=>{
 
 window.addEventListener("unhandledrejection", (e)=>{
   dbg("PROMISE: " + (e && e.reason ? (e.reason.message || String(e.reason)) : "unknown"));
+
+
+function setSwStatus(text){
+  const s = document.getElementById("swStatus");
+  if(s) s.textContent = text;
+}
+
+async function swCheckStatus(){
+  try{
+    if(!('serviceWorker' in navigator)){
+      setSwStatus("SW: このブラウザは未対応");
+      return { supported:false };
+    }
+    const reg = await navigator.serviceWorker.getRegistration();
+    const ctrl = !!navigator.serviceWorker.controller;
+    if(!reg){
+      setSwStatus(`SW: 未登録（controller=${ctrl ? "yes":"no"}）`);
+      return { supported:true, registered:false, controller:ctrl };
+    }
+    const state = reg.active ? reg.active.state : (reg.installing ? reg.installing.state : (reg.waiting ? reg.waiting.state : "unknown"));
+    const scriptURL = (reg.active && reg.active.scriptURL) || (reg.installing && reg.installing.scriptURL) || (reg.waiting && reg.waiting.scriptURL) || "";
+    setSwStatus(`SW: 登録済 / state=${state} / controller=${ctrl ? "yes":"no"} / scope=${reg.scope}`);
+    dbg(`sw: script=${scriptURL}`);
+    return { supported:true, registered:true, controller:ctrl, scope:reg.scope, state, scriptURL };
+  }catch(e){
+    setSwStatus("SW: エラー（Console/デバッグ参照）");
+    dbg("swCheck error: " + (e && e.message ? e.message : String(e)));
+    return { supported:true, error:true };
+  }
+}
+
+async function swReset(){
+  if(!('serviceWorker' in navigator)){
+    setSwStatus("SW: 未対応");
+    return;
+  }
+  try{
+    setSwStatus("SW: 再登録中…");
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for(const r of regs){
+      try{ await r.unregister(); }catch(e){}
+    }
+    // hard reload to purge SW-controlled cache
+    const reg2 = await navigator.serviceWorker.register('./sw.js', { scope:'./' });
+    dbg("sw reset: registered " + reg2.scope);
+    await swCheckStatus();
+    // force reload to attach controller
+    setTimeout(()=>location.reload(), 400);
+  }catch(e){
+    setSwStatus("SW: 再登録失敗（https/パス/キャッシュの可能性）");
+    dbg("swReset error: " + (e && e.message ? e.message : String(e)));
+  }
+}
+
 });
 
 
@@ -1383,6 +1437,20 @@ el("btnCancelOcr").addEventListener("click", async ()=>{
   }catch(e){
     console.error(e);
   }
+});
+
+
+try{
+  const b1 = el("btnSwRecheck");
+  if(b1) b1.addEventListener("click", ()=>swCheckStatus());
+  const b2 = el("btnSwReset");
+  if(b2) b2.addEventListener("click", ()=>swReset());
+}catch(e){}
+setTimeout(()=>swCheckStatus(), 600);
+
+navigator.serviceWorker && navigator.serviceWorker.addEventListener && navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+  dbg("sw: controllerchange");
+  swCheckStatus();
 });
 
 

@@ -471,3 +471,6 @@ body{
   font-weight:800;
   font-variant-numeric: tabular-nums;
 }
+
+.btn.secondary{ background:#eee; color:#111; border:1px solid #ccc; }
+.btn.secondary:active{ transform: translateY(1px); }
