@@ -174,6 +174,24 @@ async function ensureWorker(lang){
 
 
 
+async function doOcrNow(from){
+  try{
+    dumpState(`doOcrNow:${from||"?"}`);
+    if(!captureImageDataUrl){
+      setOcrStatus("画像が読み込めていません（captureImageDataUrlなし）");
+      dbg("doOcrNow: no captureImageDataUrl");
+      return;
+    }
+    setOcrStatus("解析中…（自動開始）");
+    dbg("doOcrNow: starting runOcrFromImage");
+    await runOcrFromImage(captureImageDataUrl);
+  }catch(e){
+    const msg = (e && e.message) ? e.message : String(e);
+    setOcrStatus("OCRエラー: " + msg);
+    dbg("doOcrNow error: " + msg);
+  }
+}
+
 async function runOcrFromImage(dataUrl, lang){
   const worker = await withTimeout(ensureWorker(lang), 90000, "OCR初期化がタイムアウトしました（初回言語DLがブロック/遅延の可能性）。英語のみで確認してください。");
   setOcrStatus("OCR解析中…");
@@ -1383,18 +1401,9 @@ el("fileInput").addEventListener("change", async (e)=>{
   // 2) Keep the image source for OCR (objectURL is fine)
   captureImageDataUrl = _currentObjectUrl;
   dumpState('after-pick');
-  // AUTO_OCR: start OCR automatically so it never stays at '待機中'
-  try{
-    setOcrStatus('画像選択完了 → 自動でOCRを開始します');
-    const btnRun = el('btnRunOcr');
-    if(btnRun){
-      btnRun.disabled = false;
-      setTimeout(()=>{ try{ dbg('AUTO_OCR: click btnRunOcr'); btnRun.click(); }catch(e){} }, 350);
-    }
-  }catch(e){}
-
-
-  // 3) Create a small thumbnail for records (best effort)
+    // AUTO_OCR: start OCR directly (no button click dependency)
+  setTimeout(()=>{ try{ dbg('AUTO_OCR: doOcrNow'); doOcrNow('auto'); }catch(e){} }, 350);
+// 3) Create a small thumbnail for records (best effort)
   let thumb = null;
   try{
     thumb = await fileToDataUrl(file, 700);
@@ -1429,7 +1438,8 @@ el("btnRunOcr").addEventListener("click", async ()=>{
   dbg("btnRunOcr click");
   dumpState('before-ocr');
 
-  try{
+    return doOcrNow('btn');
+try{
     if(!captureImageDataUrl){
       toast("先に画像を選択してください。");
       return;
