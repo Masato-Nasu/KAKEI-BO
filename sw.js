@@ -1,10 +1,10 @@
-const CACHE_NAME = "receipt-book-build-20260131-083942";
+const CACHE_NAME = "receipt-book-proto-v1";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css","./style.css?v=build-20260131-083942",
-  "./app.js","./app.js?v=build-20260131-083942",
-  "./manifest.webmanifest","./manifest.webmanifest?v=build-20260131-083942",
+  "./style.css",
+  "./app.js",
+  "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];

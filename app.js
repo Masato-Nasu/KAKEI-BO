@@ -1,5 +1,4 @@
 // Receipt Book (Prototype)
-const BUILD_ID = "build-20260131-083942";
 // Focus: UI flow, local storage, sorting/filter, category suggestion (Plan 1), store learning.
 // OCR: demo via pasted text.
 
@@ -43,7 +42,19 @@ function getCdnBase(){
   return _ocrCdnBase;
 }
 
+async function fetchWithTimeout(url, ms=8000){
+  const ctl = new AbortController();
+  const t = setTimeout(()=>ctl.abort(), ms);
+  try{
+    const res = await fetch(url, { mode: "cors", cache: "no-store", signal: ctl.signal });
+    return res;
+  }finally{
+    clearTimeout(t);
+  }
+}
+
 async function quickFetchTest(url){
+
   // best-effort: may fail due to CORS/network, but helpful as hint
   try{
     const res = await fetch(url, { mode: "cors" });
@@ -51,6 +62,12 @@ async function quickFetchTest(url){
   }catch(e){
     return false;
   }
+}
+
+function withTimeout(promise, ms, message){
+  let t;
+  const timeout = new Promise((_, reject)=>{ t=setTimeout(()=>reject(new Error(message)), ms); });
+  return Promise.race([promise.finally(()=>clearTimeout(t)), timeout]);
 }
 
 async function ensureWorker(lang){
@@ -62,25 +79,96 @@ async function ensureWorker(lang){
   const base = getCdnBase();
   const workerPath = `${base}/worker.min.js`;
   const corePath = `${base}/tesseract-core.wasm.js`;
+
   const langPathCandidates = [
-  // 1) projectnaptha (fast when reachable)
-  "https://tessdata.projectnaptha.com/4.0.0_best_int",
-  // 2) raw github mirror (often reachable when projectnaptha is blocked)
-  "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_best_int",
-  // 3) jsDelivr github mirror
-  "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_best_int"
-];
-let langPath = langPathCandidates[0];
-// pick first reachable by probing eng (light) OR jpn if selected
-const probeLang = (lang || "eng").split("+")[0] || "eng";
-for(const cand of langPathCandidates){
-  const probeUrl = `${cand}/${probeLang}.traineddata.gz`;
-  const ok = await quickFetchTest(probeUrl);
-  if(ok){
-    langPath = cand;
-    break;
+    "https://tessdata.projectnaptha.com/4.0.0_fast",
+    "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_fast",
+    "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0_fast"
+  ];
+
+  async function pickLangPath(testLang){
+    for(const cand of langPathCandidates){
+      const probeUrl = `${cand}/${testLang}.traineddata.gz`;
+      const ok = await quickFetchTest(probeUrl);
+      if(ok) return cand;
+    }
+    return langPathCandidates[0];
   }
+
+  // 1) pick best langPath by probing the first language (lightest)
+  const firstLang = (String(lang||"eng").split("+")[0] || "eng");
+  let langPath = await pickLangPath(firstLang);
+
+  setOcrDiag(`lib=${(window.__tessLoadedFrom||"auto").split("/").slice(0,3).join("/")} / worker=${base.includes("unpkg")?"unpkg":"jsdelivr"} / lang=${langPath.split("/").slice(0,3).join("/")}`);
+
+  // 2) probe all needed languages explicitly with timeout (detect block early)
+  const needLangs = String(lang || "eng").split("+").filter(Boolean);
+  for(const one of needLangs){
+    const url = `${langPath}/${one}.traineddata.gz`;
+    try{
+      const res = await fetchWithTimeout(url, 9000);
+      if(!(res && res.ok)) throw new Error(`status ${res ? res.status : "nores"}`);
+    }catch(e){
+      // auto fallback if Japanese is blocked
+      if(String(lang||"").includes("jpn")){
+        setOcrStatus("日本語OCRの言語データ取得に失敗 → 英語OCRに切替えます");
+        if(el("ocrLang")) el("ocrLang").value = "eng";
+        lang = "eng";
+        // repick langPath using eng
+        langPath = await pickLangPath("eng");
+        setOcrDiag(`日本語言語データ取得NG / fallback=eng / lang=${langPath.split("/").slice(0,3).join("/")}`);
+        break;
+      }else{
+        setOcrDiag(`言語データ取得NG: ${one}`);
+        throw new Error("言語データ（traineddata.gz）の取得に失敗しました。回線/フィルタの可能性があります。");
+      }
+    }
+  }
+
+  // 3) (non-blocking) worker fetch hint
+  const canWorker = await quickFetchTest(workerPath);
+  if(!canWorker) setOcrDiag("worker.min.js 取得に失敗（CDNブロックの可能性）");
+
+  if(_ocrWorker && _ocrWorkerLang === lang) return _ocrWorker;
+
+  if(_ocrWorker && _ocrWorkerLang && _ocrWorkerLang !== lang){
+    try{ await _ocrWorker.terminate(); }catch(e){}
+    _ocrWorker = null;
+    _ocrWorkerLang = null;
+  }
+
+  if(!_ocrWorker){
+    setOcrStatus(`OCR初期化中（${lang}）…`);
+    _ocrWorker = await window.Tesseract.createWorker({
+      workerPath,
+      corePath,
+      langPath,
+      logger: (m)=>{
+        if(!m) return;
+        if(typeof m.progress === "number"){
+          const p = Math.round(m.progress * 100);
+          setOcrStatus(`OCR: ${m.status}… ${p}%`);
+        }else if(m.status){
+          setOcrStatus(`OCR: ${m.status}`);
+        }
+      }
+    });
+  }
+
+  // Multi-lang: load each language then initialize combined
+  const langs = String(lang || "eng").split("+").filter(Boolean);
+  for(const one of langs){
+    setOcrStatus(`言語ロード中（${one}）…`);
+    await withTimeout(_ocrWorker.loadLanguage(one), 60000, "言語ロードがタイムアウトしました（言語データ取得が詰まっている可能性）");
+  }
+  setOcrStatus(`言語初期化中（${lang}）…`);
+  await withTimeout(_ocrWorker.initialize(lang), 60000, "言語初期化がタイムアウトしました（環境/回線の可能性）");
+
+  _ocrWorkerLang = lang;
+  setOcrStatus("OCR準備完了");
+  return _ocrWorker;
 }
+
 
 
   setOcrDiag(`lib=${(window.__tessLoadedFrom||"auto").split("/").slice(0,3).join("/")} / worker=${base.includes("unpkg")?"unpkg":"jsdelivr"} / lang=${(langPath||"").split("/").slice(0,3).join("/")}`);
@@ -118,9 +206,15 @@ for(const cand of langPathCandidates){
 
   // load / initialize language
   setOcrStatus(`言語ロード中（${lang}）…`);
-  await _ocrWorker.loadLanguage(lang);
-  setOcrStatus(`言語初期化中（${lang}）…`);
-  await _ocrWorker.initialize(lang);
+  // Multi-lang is more reliable if we load each language separately first
+const langs = String(lang || "eng").split("+").filter(Boolean);
+for(const one of langs){
+  setOcrStatus(`言語ロード中（${one}）…`);
+  await _ocrWorker.loadLanguage(one);
+}
+setOcrStatus(`言語初期化中（${lang}）…`);
+await _ocrWorker.initialize(lang);
+
   _ocrWorkerLang = lang;
 
   setOcrStatus("OCR準備完了");
@@ -128,9 +222,9 @@ for(const cand of langPathCandidates){
 }
 
 async function runOcrFromImage(dataUrl, lang){
-  const worker = await ensureWorker(lang);
+  const worker = await withTimeout(ensureWorker(lang), 90000, "OCR初期化がタイムアウトしました（初回言語DLがブロック/遅延の可能性）。英語のみで確認してください。");
   setOcrStatus("OCR解析中…");
-  const ret = await worker.recognize(dataUrl);
+  const ret = await withTimeout(worker.recognize(dataUrl), 120000, "OCRがタイムアウトしました（言語データ取得が詰まっている可能性）。英語のみで確認してください。");
   const text = (ret && ret.data && ret.data.text) ? ret.data.text : "";
   setOcrStatus("OCR完了（テキスト欄に反映しました）");
   return text;
@@ -387,7 +481,6 @@ function popPage(){
 
 function openSettings(){
   pushPage("settings");
-  try{ setBuildLabel(); }catch(e){}
 }
 
 function gotoList(){
@@ -398,8 +491,7 @@ function gotoList(){
 function gotoCapture(){
   navStack = ["capture"];
   showPage("capture");
-  try{ setBuildLabel(); }catch(e){}
-  console.log("ReceiptBook", BUILD_ID);
+  try{ const c = el("btnCancelOcr"); if(c) c.disabled = true; }catch(e){}
 }
 
 function gotoConfirm(){
@@ -725,25 +817,6 @@ function openCategoryTray(itemIdx){
 function labelOf(key){
   const c = CATEGORIES.find(x=>x.key===key);
   return c ? c.label : "未分類";
-}
-
-
-function setBuildLabel(){
-  const host = location.host || "(file)";
-  const url = location.href.split("#")[0];
-  const diag = document.getElementById("ocrDiag");
-  // keep existing diag for OCR; build label goes to settings note if present
-  const settings = document.getElementById("pageSettings");
-  if(settings){
-    let p = document.getElementById("buildInfo");
-    if(!p){
-      p = document.createElement("div");
-      p.id = "buildInfo";
-      p.className = "note";
-      settings.querySelector(".card")?.appendChild(p);
-    }
-    p.textContent = `Build: ${BUILD_ID} / host: ${host}`;
-  }
 }
 
 // recent categories stored in localStorage
@@ -1229,20 +1302,40 @@ el("btnRunOcr").addEventListener("click", async ()=>{
     }
     const lang = el("ocrLang") ? el("ocrLang").value : "jpn+eng";
     el("btnRunOcr").disabled = true;
+    if(el("btnCancelOcr")) el("btnCancelOcr").disabled = false;
     setOcrStatus("OCR準備中…");
     setOcrDiag("実行中");
     const text = await runOcrFromImage(captureImageDataUrl, lang);
     el("ocrText").value = (text || "").trim();
     el("btnRunOcr").disabled = false;
+    if(el("btnCancelOcr")) el("btnCancelOcr").disabled = true;
     if(!(text || "").trim()){
       toast("OCR結果が空でした。撮影条件（影/傾き/距離）を見直すか、言語を英語にして試してください。");
     }
   }catch(err){
     el("btnRunOcr").disabled = false;
+    if(el("btnCancelOcr")) el("btnCancelOcr").disabled = true;
     setOcrStatus("OCRエラー");
     setOcrDiag((err && err.message) ? err.message : "unknown error");
     toast("OCRに失敗しました。①http(s)で開く ②別回線で試す ③言語を英語で試す（日本語は重い）④tessdata取得がブロックされている可能性");
     console.error(err);
+  }
+});
+
+el("btnCancelOcr").addEventListener("click", async ()=>{
+  try{
+    if(_ocrWorker){
+      setOcrStatus("OCRを中断しました");
+      setOcrDiag("中断");
+      try{ await _ocrWorker.terminate(); }catch(e){}
+      _ocrWorker = null;
+      _ocrWorkerLang = null;
+    }
+    if(el("btnCancelOcr")) el("btnCancelOcr").disabled = true;
+    if(el("btnRunOcr")) el("btnRunOcr").disabled = false;
+    if(el("btnCancelOcr")) el("btnCancelOcr").disabled = true;
+  }catch(e){
+    console.error(e);
   }
 });
 
@@ -1347,8 +1440,6 @@ function SAMPLE_TEXT(){
 // init
 (function init(){
   showPage("capture");
-  try{ setBuildLabel(); }catch(e){}
-  console.log("ReceiptBook", BUILD_ID);
   try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
   setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing
