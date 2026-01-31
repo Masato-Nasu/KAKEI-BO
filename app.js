@@ -1296,6 +1296,11 @@ function exportCSV(){
 el("btnBack").addEventListener("click", ()=> popPage());
 el("btnSettings").addEventListener("click", ()=> openSettings());
 
+el("btnPickPhoto").addEventListener("click", ()=>{
+  const inp = el("fileInput");
+  if(inp) inp.click();
+});
+
 el("fileInput").addEventListener("change", async (e)=>{
   const file = e.target.files && e.target.files[0];
   if(!file) return;
@@ -1442,7 +1447,7 @@ function loadImage(src){
   return new Promise((resolve, reject)=>{
     const img = new Image();
     img.onload = ()=> resolve(img);
-    img.onerror = reject;
+    img.onerror = (e)=>{ try{ toast('画像の読み込みに失敗しました。別の画像を選ぶか、撮影し直してください。'); }catch(_){} reject(e); };
     img.src = src;
   });
 }

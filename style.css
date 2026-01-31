@@ -22,7 +22,7 @@ body{
   background:var(--bg);
 }
 
-.hidden{ display:none !important; }
+.hidden{ position:absolute !important; left:-9999px !important; width:1px !important; height:1px !important; opacity:0 !important; }
 
 .app{
   min-height: 100dvh;
