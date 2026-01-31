@@ -173,56 +173,6 @@ async function ensureWorker(lang){
 
 
 
-  setOcrDiag(`lib=${(window.__tessLoadedFrom||"auto").split("/").slice(0,3).join("/")} / worker=${base.includes("unpkg")?"unpkg":"jsdelivr"} / lang=${(langPath||"").split("/").slice(0,3).join("/")}`);
-
-  // Lightweight connectivity hints (non-blocking)
-  const canWorker = await quickFetchTest(workerPath);
-  if(!canWorker) setOcrDiag("worker.min.js 取得に失敗（CDNブロックの可能性）");
-
-  if(_ocrWorker && _ocrWorkerLang === lang) return _ocrWorker;
-
-  // If exists but different language, terminate and recreate (more reliable than reinitialize across environments)
-  if(_ocrWorker && _ocrWorkerLang && _ocrWorkerLang !== lang){
-    try{ await _ocrWorker.terminate(); }catch(e){}
-    _ocrWorker = null;
-    _ocrWorkerLang = null;
-  }
-
-  if(!_ocrWorker){
-    setOcrStatus(`OCR初期化中（${lang}）…`);
-    _ocrWorker = await window.Tesseract.createWorker({
-      workerPath,
-      corePath,
-      langPath,
-      logger: (m)=>{
-        if(!m) return;
-        if(typeof m.progress === "number"){
-          const p = Math.round(m.progress * 100);
-          setOcrStatus(`OCR: ${m.status}… ${p}%`);
-        }else if(m.status){
-          setOcrStatus(`OCR: ${m.status}`);
-        }
-      }
-    });
-  }
-
-  // load / initialize language
-  setOcrStatus(`言語ロード中（${lang}）…`);
-  // Multi-lang is more reliable if we load each language separately first
-const langs = String(lang || "eng").split("+").filter(Boolean);
-for(const one of langs){
-  setOcrStatus(`言語ロード中（${one}）…`);
-  await _ocrWorker.loadLanguage(one);
-}
-setOcrStatus(`言語初期化中（${lang}）…`);
-await _ocrWorker.initialize(lang);
-
-  _ocrWorkerLang = lang;
-
-  setOcrStatus("OCR準備完了");
-  return _ocrWorker;
-}
-
 async function runOcrFromImage(dataUrl, lang){
   const worker = await withTimeout(ensureWorker(lang), 90000, "OCR初期化がタイムアウトしました（初回言語DLがブロック/遅延の可能性）。英語のみで確認してください。");
   setOcrStatus("OCR解析中…");
