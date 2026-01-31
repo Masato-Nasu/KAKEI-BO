@@ -37,9 +37,20 @@
             <button class="btn" id="btnUseSample">サンプル（テキスト）で試す</button>
           </div>
 
+<div class="row" style="margin-top:10px; align-items:center; gap:10px;">
+  <button class="btn" id="btnRunOcr" disabled>画像からOCRして貼り付け</button>
+  <select class="select" id="ocrLang" title="OCR言語">
+    <option value="jpn+eng" selected>日本語 + 英語</option>
+    <option value="jpn">日本語のみ</option>
+    <option value="eng">英語のみ</option>
+  </select>
+</div>
+<div class="note" id="ocrStatus">OCR待機中（画像を選択してください）</div>
+
+
           <div class="note">
-            ※このプロトタイプはまずUI/保存/ソート/カテゴリ学習の検証用です。<br>
-            OCRは<strong>テキスト貼り付け</strong>（またはサンプル）で疑似的に動かせます。
+            ※このプロトタイプはUI/保存/ソート/カテゴリ学習の検証用に加えて、<strong>画像からOCR</strong>も一通り動きます。<br>
+            ただし `file://` 直開きだとブラウザ制限でOCRが失敗する場合があるため、<strong>http(s)で開く</strong>のが確実です（README参照）。
           </div>
         </div>
 

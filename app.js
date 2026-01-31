@@ -2,6 +2,61 @@
 // Focus: UI flow, local storage, sorting/filter, category suggestion (Plan 1), store learning.
 // OCR: demo via pasted text.
 
+// ---------- OCR (Tesseract.js v5, CDN) ----------
+const OCR_CDN_DIST = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist";
+let captureImageDataUrl = null;
+
+let _ocrWorker = null;
+let _ocrWorkerLang = null;
+
+function setOcrStatus(text){
+  const s = el("ocrStatus");
+  if(s) s.textContent = text;
+}
+
+async function getOcrWorker(lang){
+  if(!window.Tesseract){
+    throw new Error("Tesseract.js が読み込めませんでした（ネットワーク or 読み込みブロックの可能性）。");
+  }
+  if(_ocrWorker && _ocrWorkerLang === lang) return _ocrWorker;
+
+  // If worker exists but language differs, reinitialize
+  if(_ocrWorker && _ocrWorkerLang && _ocrWorkerLang !== lang){
+    setOcrStatus(`OCR再初期化中（${lang}）…`);
+    await _ocrWorker.reinitialize(lang, 1);
+    _ocrWorkerLang = lang;
+    return _ocrWorker;
+  }
+
+  setOcrStatus(`OCR初期化中（${lang}）…`);
+  _ocrWorker = await window.Tesseract.createWorker(lang, 1, {
+    workerPath: `${OCR_CDN_DIST}/worker.min.js`,
+    // Note: corePath/langPath are left default (worker decides).
+    logger: (m)=>{
+      if(!m) return;
+      if(typeof m.progress === "number"){
+        const p = Math.round(m.progress * 100);
+        setOcrStatus(`OCR: ${m.status}… ${p}%`);
+      }else if(m.status){
+        setOcrStatus(`OCR: ${m.status}`);
+      }
+    }
+  });
+  _ocrWorkerLang = lang;
+  setOcrStatus("OCR準備完了");
+  return _ocrWorker;
+}
+
+async function runOcrFromImage(dataUrl, lang){
+  const worker = await getOcrWorker(lang);
+  setOcrStatus("OCR解析中…");
+  const ret = await worker.recognize(dataUrl);
+  const text = (ret && ret.data && ret.data.text) ? ret.data.text : "";
+  setOcrStatus("OCR完了（テキスト欄に反映しました）");
+  return text;
+}
+
+
 const CATEGORIES = [
   { key: "food", label: "食費" },
   { key: "dine", label: "外食" },
@@ -614,6 +669,10 @@ function setCapturePreviewFromDataUrl(dataUrl){
   const img = document.createElement("img");
   img.src = dataUrl;
   box.appendChild(img);
+  captureImageDataUrl = dataUrl;
+  const btn = el("btnRunOcr");
+  if(btn) btn.disabled = false;
+  setOcrStatus("OCR待機中（「画像からOCR」ボタンで実行できます）");
 }
 
 function createDraftFromText(text, imageDataUrl=null){
@@ -1061,6 +1120,30 @@ el("btnUseSample").addEventListener("click", ()=>{
   createDraftFromText(sample, null);
 });
 
+el("btnRunOcr").addEventListener("click", async ()=>{
+  try{
+    if(!captureImageDataUrl){
+      toast("先に画像を選択してください。");
+      return;
+    }
+    const lang = el("ocrLang") ? el("ocrLang").value : "jpn+eng";
+    el("btnRunOcr").disabled = true;
+    setOcrStatus("OCR準備中…");
+    const text = await runOcrFromImage(captureImageDataUrl, lang);
+    el("ocrText").value = (text || "").trim();
+    el("btnRunOcr").disabled = false;
+    if(!(text || "").trim()){
+      toast("OCR結果が空でした。撮影条件（影/傾き/距離）を見直すか、テキスト貼り付けで試してください。");
+    }
+  }catch(err){
+    el("btnRunOcr").disabled = false;
+    setOcrStatus("OCRエラー");
+    toast("OCRに失敗しました。READMEの『http(s)で開く』を確認してください。");
+    console.error(err);
+  }
+});
+
+
 el("summaryCard").addEventListener("click", (e)=>{
   const b = e.target.closest("[data-edit]");
   if(!b) return;
@@ -1161,6 +1244,8 @@ function SAMPLE_TEXT(){
 // init
 (function init(){
   showPage("capture");
+  try{ const btn = el("btnRunOcr"); if(btn) btn.disabled = true; }catch(e){}
+  setOcrStatus("OCR待機中（画像を選択してください）");
   // open list if existing
   const db = loadDB();
   if((db.receipts||[]).length){
