@@ -1,6 +1,6 @@
 /* Receipt Book PWA - Service Worker */
-const CACHE_NAME = "receipt-book-cache-20260131095811";
-const CORE_ASSETS = ['./', './index.html', './app.20260131094445.js', './style.css', './icons/icon-192.png', './icons/icon-512.png', './manifest.webmanifest'];
+const CACHE_NAME = "receipt-book-cache-20260131100445";
+const CORE_ASSETS = ['./', './index.html', './app.20260131100445.js', './style.css', './icons/icon-192.png', './icons/icon-512.png', './manifest.webmanifest'];
 
 // Install: cache core
 self.addEventListener("install", (event) => {

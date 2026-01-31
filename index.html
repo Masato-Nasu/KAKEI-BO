@@ -26,7 +26,7 @@
       <!-- CAPTURE -->
       <section class="page" id="pageCapture">
         <div class="card">
-          <div class="card__title">撮影 / 画像選択</div>
+          <div class="card__title">撮影 / 画像選択 <span id="buildTag" class="buildTag"></span></div>
           <div class="captureBox" id="capturePreview">
             <div class="captureBox__hint">ここにプレビューが表示されます</div>
           </div>
@@ -237,7 +237,7 @@
     })();
   })();
 </script>
-<script src="./app.20260131094445.js" defer></script>
+<script src="./app.20260131100445.js" defer></script>
   <script>
   // Service Worker (PWA offline / update)
   (function(){
@@ -265,5 +265,38 @@
 })();
 </script>
 
+<script>
+(function(){
+  // Build tag
+  var tag=document.getElementById('buildTag');
+  if(tag) tag.textContent = "build 20260131100445";
+  // Fallback preview: if app JS didn't bind, still show preview
+  function bindFallback(){
+    if(window.__KAKEIBO_FILE_BIND) return;
+    var fi=document.getElementById('fileInput');
+    var box=document.getElementById('capturePreview');
+    if(!fi || !box) return;
+    fi.addEventListener('change', function(){
+      try{
+        var file = fi.files && fi.files[0];
+        if(!file) return;
+        box.innerHTML = '<div class="captureBox__hint">プレビュー読み込み中…</div>';
+        var url = URL.createObjectURL(file);
+        var img = document.createElement('img');
+        img.alt = "receipt preview";
+        img.onload = function(){ try{ URL.revokeObjectURL(url); }catch(e){} };
+        img.onerror = function(){
+          box.innerHTML = '<div class="captureBox__hint">プレビュー表示に失敗しました（画像形式の可能性）</div>';
+        };
+        img.src = url;
+        box.innerHTML = '';
+        box.appendChild(img);
+      }catch(e){}
+    }, {passive:true});
+    console.log("Fallback preview bound (app binding missing)");
+  }
+  setTimeout(bindFallback, 1200);
+})();
+</script>
 </body>
 </html>
