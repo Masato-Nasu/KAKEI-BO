@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111111" />
+  <title>kakei-bo</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="authGate" class="auth-gate">
+    <div class="auth-card">
+      <p class="eyebrow">kakei-bo</p>
+      <h1 class="auth-title">パスワードを入力してください</h1>
+      <p class="lead">最初の一回だけ、この端末で利用開始のためにパスワードを確認します。</p>
+      <form id="authForm" class="auth-form">
+        <label class="auth-label">
+          <span>パスワード</span>
+          <input id="gatePassword" type="password" autocomplete="current-password" placeholder="パスワード" />
+        </label>
+        <div class="controls">
+          <button id="unlockBtn" class="primary" type="submit">利用開始</button>
+        </div>
+      </form>
+      <div id="authStatus" class="status">パスワード未入力です。</div>
+    </div>
+  </div>
+
+  <main id="appShell" class="app-shell hidden">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">kakei-bo</p>
+        <h1 class="hero-title">撮るだけで、文字化と整理。</h1>
+        <p class="lead">レシートを撮影すると、店名・日付・合計・品目・カテゴリをAIで整理して保存します。</p>
+      </div>
+      <button id="installBtn" class="ghost hidden" type="button">インストール</button>
+    </header>
+
+    <section class="card capture-card">
+      <div class="card-head">
+        <h2>新しいレシート</h2>
+        <p>撮影または画像選択</p>
+      </div>
+
+      <label class="upload-zone" for="receiptInput" id="uploadZone">
+        <input id="receiptInput" type="file" accept="image/*" capture="environment" />
+        <img id="previewImage" class="preview hidden" alt="preview" />
+        <div id="uploadPrompt" class="upload-prompt">
+          <div class="camera-icon">⌁</div>
+          <strong>ここを押して撮影</strong>
+          <span>カメラまたはギャラリーから選べます</span>
+        </div>
+      </label>
+
+      <div class="controls">
+        <button id="analyzeBtn" class="primary" type="button" disabled>AIで整理する</button>
+        <button id="clearBtn" class="ghost" type="button">クリア</button>
+      </div>
+
+      <div id="status" class="status">画像を選択してください。</div>
+    </section>
+
+    <section class="grid-two">
+      <section class="card result-card">
+        <div class="card-head">
+          <h2>抽出結果</h2>
+          <p>必要なら保存前に確認</p>
+        </div>
+
+        <form id="receiptForm" class="result-form">
+          <label>
+            <span>店名</span>
+            <input id="merchant" type="text" placeholder="未抽出" />
+          </label>
+          <label>
+            <span>日付</span>
+            <input id="date" type="date" />
+          </label>
+          <label>
+            <span>合計</span>
+            <input id="total" type="number" inputmode="decimal" step="0.01" placeholder="0" />
+          </label>
+          <label>
+            <span>参考カテゴリ</span>
+            <input id="category" type="text" placeholder="内容から自動判定" />
+          </label>
+          <label class="full">
+            <span>品目</span>
+            <textarea id="items" rows="6" placeholder="1行に1品目"></textarea>
+          </label>
+          <label class="full">
+            <span>メモ</span>
+            <textarea id="note" rows="3" placeholder="補足があれば"></textarea>
+          </label>
+        </form>
+
+        <div class="controls">
+          <button id="saveBtn" class="primary" type="button" disabled>保存する</button>
+        </div>
+      </section>
+
+      <section class="card summary-card">
+        <div class="card-head">
+          <h2>今月の集計</h2>
+          <p>ローカル保存</p>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <span class="summary-label">保存件数</span>
+            <strong id="entryCount">0</strong>
+          </div>
+          <div class="summary-box">
+            <span class="summary-label">合計</span>
+            <strong id="monthTotal">¥0</strong>
+          </div>
+        </div>
+        <div class="category-list-wrap">
+          <h3>品目カテゴリ別</h3>
+          <ul id="categoryList" class="category-list"></ul>
+        </div>
+      </section>
+    </section>
+
+    <section class="card history-card">
+      <div class="card-head">
+        <h2>保存履歴</h2>
+        <p>画像は端末内に保存されます</p>
+      </div>
+      <div class="history-actions">
+        <button id="exportBtn" class="ghost" type="button">JSONを書き出す</button>
+        <button id="deleteAllBtn" class="ghost danger" type="button">全削除</button>
+      </div>
+      <div id="exportNotice" class="export-notice hidden" aria-live="polite"></div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+    <section class="card dict-card">
+      <div class="card-head">
+        <h2>辞書登録</h2>
+        <p>修正した分類を次回以降に反映します</p>
+      </div>
+      <div id="dictList" class="dict-list"></div>
+    </section>
+
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
