@@ -209,3 +209,140 @@ button { cursor: pointer; border: 0; }
   touch-action: manipulation;
   -webkit-appearance: none;
 }
+
+.month-tools {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.month-label,
+.settings-label {
+  display: grid;
+  gap: 8px;
+}
+
+.month-label span,
+.settings-label span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.month-label input,
+.settings-label textarea {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  padding: 13px 14px;
+  outline: none;
+}
+
+.settings-label textarea {
+  resize: vertical;
+}
+
+.compact-controls {
+  margin-top: 0;
+}
+
+.month-buttons {
+  align-items: center;
+}
+
+.settings-card,
+.dict-card {
+  margin-top: 18px;
+}
+
+@media (min-width: 861px) {
+  .month-tools {
+    grid-template-columns: 220px 1fr;
+    align-items: end;
+  }
+}
+
+
+.receipt-merge-tools {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.extra-preview-wrap {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.extra-preview {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #090a0b;
+}
+
+
+.owner-filter-wrap {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.owner-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.owner-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  font-size: 13px;
+}
+.owner-filter-pill input { margin: 0; }
+.history-owner-line { margin: 10px 0 0; }
+.history-owner-input { width: 100%; }
+.history-chip.owner-chip { background: rgba(255,255,255,0.08); }
+.subhead { margin-bottom: 6px; }
+
+.owner-picker,
+.history-owner-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-owner-pill {
+  margin: 0;
+}
+
+
+.owner-filter-panel {
+  margin: 14px 0 16px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+}
+
+.compact-head {
+  margin-bottom: 10px;
+}
+
+.compact-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.owner-filter-actions {
+  margin-bottom: 10px;
+}

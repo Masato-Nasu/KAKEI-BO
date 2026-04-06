@@ -54,6 +54,16 @@
         </div>
       </label>
 
+      <div class="receipt-merge-tools">
+        <input id="receiptInputExtra" type="file" accept="image/*" capture="environment" class="hidden" />
+        <button id="addMoreImageBtn" class="ghost" type="button">長いレシートの続き画像を追加</button>
+        <button id="removeExtraImageBtn" class="ghost mini hidden" type="button">続き画像を外す</button>
+      </div>
+      <div id="extraPreviewWrap" class="extra-preview-wrap hidden">
+        <img id="previewImageExtra" class="extra-preview" alt="receipt continuation preview" />
+        <div class="history-meta">2枚目の画像も一緒に解析します。</div>
+      </div>
+
       <div class="controls">
         <button id="analyzeBtn" class="primary" type="button" disabled>AIで整理する</button>
         <button id="clearBtn" class="ghost" type="button">クリア</button>
@@ -84,7 +94,13 @@
           </label>
           <label>
             <span>参考カテゴリ</span>
-            <input id="category" type="text" placeholder="内容から自動判定" />
+            <input id="category" type="text" list="categoryOptions" placeholder="内容から自動判定" />
+            <datalist id="categoryOptions"></datalist>
+          </label>
+          <label class="full">
+            <span>対象者</span>
+            <input id="owners" type="hidden" value="家族共通" />
+            <div id="ownerPicker" class="owner-picker"></div>
           </label>
           <label class="full">
             <span>品目</span>
@@ -103,9 +119,35 @@
 
       <section class="card summary-card">
         <div class="card-head">
-          <h2>今月の集計</h2>
-          <p>ローカル保存</p>
+          <h2>月ごとの集計</h2>
+          <p id="summaryScope">全期間の保存データ</p>
         </div>
+
+        <div class="month-tools">
+          <label class="month-label">
+            <span>対象月</span>
+            <input id="monthFilter" type="month" />
+          </label>
+          <div class="controls month-buttons compact-controls">
+            <button id="monthNowBtn" class="ghost mini" type="button">今月</button>
+            <button id="monthClearBtn" class="ghost mini" type="button">全期間</button>
+            <button id="deleteMonthBtn" class="ghost danger mini" type="button" disabled>この月を削除</button>
+          </div>
+        </div>
+
+
+        <div class="owner-filter-panel">
+          <div class="card-head compact-head">
+            <h3>対象者で表示</h3>
+            <p id="ownerScope">全員</p>
+          </div>
+          <div class="controls compact-controls owner-filter-actions">
+            <button id="ownerFilterAllBtn" class="ghost mini" type="button">全員</button>
+            <button id="ownerFilterSharedBtn" class="ghost mini" type="button">家族共通</button>
+          </div>
+          <div id="ownerFilterList" class="owner-filter-list"></div>
+        </div>
+
         <div class="summary-grid">
           <div class="summary-box">
             <span class="summary-label">保存件数</span>
@@ -126,21 +168,57 @@
     <section class="card history-card">
       <div class="card-head">
         <h2>保存履歴</h2>
-        <p>画像は端末内に保存されます</p>
+        <p id="historyScope">画像は端末内に保存されます</p>
       </div>
       <div class="history-actions">
+        <input id="importJsonInput" type="file" accept="application/json,.json" class="hidden" />
+        <button id="importBtn" class="ghost" type="button">JSONを読み込む</button>
         <button id="exportBtn" class="ghost" type="button">JSONを書き出す</button>
+        <button id="exportCsvBtn" class="ghost" type="button">CSVを書き出す</button>
         <button id="deleteAllBtn" class="ghost danger" type="button">全削除</button>
       </div>
       <div id="exportNotice" class="export-notice hidden" aria-live="polite"></div>
       <div id="historyList" class="history-list"></div>
     </section>
+
     <section class="card dict-card">
       <div class="card-head">
         <h2>辞書登録</h2>
         <p>修正した分類を次回以降に反映します</p>
       </div>
       <div id="dictList" class="dict-list"></div>
+    </section>
+
+    <section class="card settings-card">
+      <div class="card-head">
+        <h2>カテゴリ設定</h2>
+        <p>1行に1カテゴリ。AIがこのカテゴリ群を優先して使います。</p>
+      </div>
+      <label class="settings-label" for="categoryConfig">
+        <span>独自カテゴリ</span>
+        <textarea id="categoryConfig" rows="8" placeholder="食費&#10;ソフトドリンク&#10;ノンアル"></textarea>
+      </label>
+      <div class="controls compact-controls">
+        <button id="saveCategoryConfigBtn" class="primary" type="button">カテゴリ設定を保存</button>
+        <button id="resetCategoryConfigBtn" class="ghost" type="button">初期カテゴリに戻す</button>
+      </div>
+      <div id="categoryConfigStatus" class="status">保存すると次回のAI整理にも反映されます。</div>
+    </section>
+
+    <section class="card settings-card">
+      <div class="card-head">
+        <h2>家族メンバー設定</h2>
+        <p>1行に1人。表示フィルタと対象者候補に使います。</p>
+      </div>
+      <label class="settings-label" for="familyConfig">
+        <span>メンバー</span>
+        <textarea id="familyConfig" rows="6" placeholder="家族共通&#10;夫&#10;妻&#10;子供"></textarea>
+      </label>
+      <div class="controls compact-controls">
+        <button id="saveFamilyConfigBtn" class="primary" type="button">家族設定を保存</button>
+        <button id="resetFamilyConfigBtn" class="ghost" type="button">初期メンバーに戻す</button>
+      </div>
+      <div id="familyConfigStatus" class="status">保存すると対象者候補と人別表示に反映されます。</div>
     </section>
 
   </main>
