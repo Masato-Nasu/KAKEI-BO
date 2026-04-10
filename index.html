@@ -66,6 +66,7 @@
 
       <div class="controls">
         <button id="analyzeBtn" class="primary" type="button" disabled>AIで整理する</button>
+        <button id="manualEntryBtn" class="ghost" type="button">レシートなしで記録</button>
         <button id="clearBtn" class="ghost" type="button">クリア</button>
       </div>
 
@@ -175,7 +176,7 @@
         <button id="importBtn" class="ghost" type="button">JSONを読み込む</button>
         <button id="exportBtn" class="ghost" type="button">JSONを書き出す</button>
         <button id="exportCsvBtn" class="ghost" type="button">CSVを書き出す</button>
-        <button id="deleteAllBtn" class="ghost danger" type="button">全削除</button>
+        <button id="deleteAllBtn" class="ghost danger" type="button">ローカル保存を全削除</button>
       </div>
       <div id="exportNotice" class="export-notice hidden" aria-live="polite"></div>
       <div id="historyList" class="history-list"></div>
@@ -219,6 +220,21 @@
         <button id="resetFamilyConfigBtn" class="ghost" type="button">初期メンバーに戻す</button>
       </div>
       <div id="familyConfigStatus" class="status">保存すると対象者候補と人別表示に反映されます。</div>
+    </section>
+
+
+    <section class="card settings-card">
+      <div class="card-head">
+        <h2>画像整理</h2>
+        <p>指定日より前の画像だけ削除します。記録自体は残ります。</p>
+      </div>
+      <label class="settings-label" for="pruneImageBeforeDate">
+        <span>指定日</span>
+        <input id="pruneImageBeforeDate" type="date" />
+      </label>
+      <div class="controls compact-controls">
+        <button id="pruneImageBeforeBtn" class="ghost danger" type="button">この日付より前の画像を削除</button>
+      </div>
     </section>
 
   </main>

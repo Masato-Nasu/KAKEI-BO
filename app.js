@@ -89,6 +89,7 @@ const addMoreImageBtn = document.getElementById('addMoreImageBtn');
 const removeExtraImageBtn = document.getElementById('removeExtraImageBtn');
 const uploadPrompt = document.getElementById('uploadPrompt');
 const analyzeBtn = document.getElementById('analyzeBtn');
+const manualEntryBtn = document.getElementById('manualEntryBtn');
 const clearBtn = document.getElementById('clearBtn');
 const saveBtn = document.getElementById('saveBtn');
 const statusEl = document.getElementById('status');
@@ -128,6 +129,8 @@ const ownerFilterList = document.getElementById('ownerFilterList');
 const ownerScopeEl = document.getElementById('ownerScope');
 const ownerFilterAllBtn = document.getElementById('ownerFilterAllBtn');
 const ownerFilterSharedBtn = document.getElementById('ownerFilterSharedBtn');
+const pruneImageBeforeDateEl = document.getElementById('pruneImageBeforeDate');
+const pruneImageBeforeBtn = document.getElementById('pruneImageBeforeBtn');
 const familyConfigEl = document.getElementById('familyConfig');
 const saveFamilyConfigBtn = document.getElementById('saveFamilyConfigBtn');
 const resetFamilyConfigBtn = document.getElementById('resetFamilyConfigBtn');
@@ -940,6 +943,18 @@ function resetImage() {
   statusEl.textContent = '画像を選択してください。';
 }
 
+function startManualEntryMode() {
+  resetImage();
+  resetForm();
+  const today = new Date();
+  const yyyy = String(today.getFullYear());
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  dateEl.value = `${yyyy}-${mm}-${dd}`;
+  saveBtn.disabled = false;
+  statusEl.textContent = 'レシートなしの直接入力モードです。必要事項を入力して保存してください。';
+}
+
 function setPreviewImage(imgEl, file) {
   if (!imgEl || !file) return;
   const objectUrl = URL.createObjectURL(file);
@@ -1007,6 +1022,12 @@ function formatDateLabel(value) {
 function matchesMonth(entry, monthValue) {
   if (!monthValue) return true;
   return String(entry.date || '').startsWith(monthValue);
+}
+
+function isEntryDateBefore(entry, cutoffDate) {
+  const entryDate = String(entry?.date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return false;
+  return entryDate < cutoffDate;
 }
 
 function getVisibleEntries() {
@@ -1296,15 +1317,20 @@ function isQuotaExceededError(error) {
   );
 }
 
+function getEntriesForJsonExport() {
+  const entries = loadEntries();
+  if (isAllOwnersSelected()) return entries;
+  const selected = activeOwnerFilters;
+  return entries.filter((entry) => {
+    const owners = Array.isArray(entry.owners) && entry.owners.length ? entry.owners : ['家族共通'];
+    return owners.some((name) => selected.includes(name));
+  });
+}
+
 function buildJsonFileName() {
-  const now = new Date();
-  const yyyy = String(now.getFullYear());
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  return `kakei-bo-${yyyy}${mm}${dd}-${hh}${mi}${ss}.json`;
+  const label = isAllOwnersSelected() ? '全員' : (activeOwnerFilters.length ? activeOwnerFilters.join('_') : '全員');
+  const safeLabel = String(label).replace(/[\/:*?"<>|\s]+/g, '_');
+  return `kakei-bo-${safeLabel}-latest.json`;
 }
 
 function buildCsvFileName() {
@@ -1501,6 +1527,12 @@ saveBtn.addEventListener('click', async () => {
   }
 });
 
+if (manualEntryBtn) {
+  manualEntryBtn.addEventListener('click', () => {
+    startManualEntryMode();
+  });
+}
+
 clearBtn.addEventListener('click', () => {
   resetForm();
   resetImage();
@@ -1531,7 +1563,7 @@ if (importBtn && importJsonInput) {
 }
 
 exportBtn.addEventListener('click', () => {
-  const entries = loadEntries();
+  const entries = getEntriesForJsonExport();
   if (!entries.length) {
     statusEl.textContent = '書き出すデータがありません。';
     return;
@@ -1561,10 +1593,24 @@ if (exportCsvBtn) {
 }
 
 deleteAllBtn.addEventListener('click', () => {
-  if (!confirm('保存履歴をすべて削除しますか？')) return;
+  const entries = loadEntries();
+  const targetCount = entries.length;
+  if (!targetCount) {
+    statusEl.textContent = '削除する保存履歴がありません。';
+    return;
+  }
+  const ok = confirm(`この端末の保存履歴 ${targetCount} 件をすべて削除します。
+JSON/CSVとして書き出したファイルは消えません。
+元に戻せません。続けますか？`);
+  if (!ok) return;
+  const keyword = prompt('確認のため「削除」と入力してください。');
+  if (keyword !== '削除') {
+    statusEl.textContent = '全削除を中止しました。';
+    return;
+  }
   saveEntries([]);
   renderHistory();
-  statusEl.textContent = '保存履歴を削除しました。';
+  statusEl.textContent = `保存履歴 ${targetCount} 件を削除しました。`;
 });
 
 if (deleteMonthBtn) {
@@ -1584,6 +1630,37 @@ if (deleteMonthBtn) {
     saveEntries(entries.filter((entry) => !matchesMonth(entry, monthValue)));
     renderHistory();
     statusEl.textContent = `${monthValue} の記録を削除しました。`;
+  });
+}
+
+if (pruneImageBeforeBtn) {
+  pruneImageBeforeBtn.addEventListener('click', () => {
+    const cutoffDate = String(pruneImageBeforeDateEl?.value || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate)) {
+      statusEl.textContent = '画像を削除する基準日を選んでください。';
+      return;
+    }
+
+    const entries = loadEntries();
+    let affectedCount = 0;
+
+    const next = entries.map((entry) => {
+      if (!entry?.imageDataUrl) return entry;
+      if (!isEntryDateBefore(entry, cutoffDate)) return entry;
+      affectedCount += 1;
+      return { ...entry, imageDataUrl: '' };
+    });
+
+    if (!affectedCount) {
+      statusEl.textContent = `${cutoffDate} より前に削除対象の画像はありません。`;
+      return;
+    }
+
+    if (!confirm(`${cutoffDate} より前の画像 ${affectedCount} 件を削除しますか？\n記録自体は残ります。`)) return;
+
+    saveEntries(next);
+    renderHistory();
+    statusEl.textContent = `${cutoffDate} より前の画像を ${affectedCount} 件削除しました。`;
   });
 }
 
