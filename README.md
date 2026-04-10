@@ -9,7 +9,7 @@
 
 ## 実行画面
 
-- https://masato-lab.pages.dev/tools/kakei-bo
+- https://kakei-bo.pages.dev/
 
 ## Screenshots
 
