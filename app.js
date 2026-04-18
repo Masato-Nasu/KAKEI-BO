@@ -143,6 +143,7 @@ let previewDataUrlExtra = '';
 let deferredPrompt = null;
 let currentAnalyzedItemDetails = [];
 let activeOwnerFilters = [];
+let expandedSummaryCategories = new Set();
 
 function isAuthorized() {
   return localStorage.getItem(AUTH_KEY) === '1';
@@ -1085,6 +1086,97 @@ function getCategoryBreakdown(entry) {
   }));
 }
 
+
+function buildCategoryDetailRows(entries, categoryName) {
+  const targetCategory = normalizeCategory(categoryName) || '未分類';
+  const rows = [];
+
+  entries.forEach((entry) => {
+    const itemDetails = Array.isArray(entry.itemDetails) ? entry.itemDetails.filter((detail) => detail?.name) : [];
+    if (itemDetails.length) {
+      itemDetails.forEach((detail) => {
+        const detailCategory =
+          normalizeCategory(detail.category) ||
+          classifyItemName(detail.name) ||
+          inferEntryCategory(itemDetails, entry.merchant) ||
+          '未分類';
+
+        if (detailCategory !== targetCategory) return;
+
+        rows.push({
+          entryId: entry.id,
+          date: entry.date,
+          merchant: entry.merchant || '店名なし',
+          name: detail.name || '品目なし',
+          amount: ensureSignedAmount(detail.name, detailCategory, detail.price ?? detail.amount ?? 0),
+        });
+      });
+      return;
+    }
+
+    const fallbackCategory = inferEntryCategory(entry.itemDetails, entry.merchant) || '未分類';
+    if (fallbackCategory !== targetCategory) return;
+
+    rows.push({
+      entryId: entry.id,
+      date: entry.date,
+      merchant: entry.merchant || '店名なし',
+      name: (Array.isArray(entry.items) && entry.items[0]) || '品目なし',
+      amount: parseMoney(entry.total || 0),
+    });
+  });
+
+  return rows.sort((a, b) => {
+    const ad = String(a.date || '');
+    const bd = String(b.date || '');
+    if (ad !== bd) return bd.localeCompare(ad);
+    return String(a.entryId || '').localeCompare(String(b.entryId || ''));
+  });
+}
+
+function renderCategorySummaryList(sorted, entries) {
+  categoryList.innerHTML = sorted.length
+    ? sorted
+        .map(([name, meta]) => {
+          const isExpanded = expandedSummaryCategories.has(name);
+          const detailRows = isExpanded ? buildCategoryDetailRows(entries, name) : [];
+          const detailHtml = isExpanded
+            ? `
+              <div class="category-detail-list">
+                ${detailRows.length
+                  ? detailRows
+                      .map((row) => `
+                        <div class="category-detail-row">
+                          <div class="category-detail-main">
+                            <span class="category-detail-date">${escapeHtml(formatDateLabel(row.date))}</span>
+                            <span class="category-detail-name">${escapeHtml(row.name)}</span>
+                          </div>
+                          <div class="category-detail-sub">
+                            <span class="category-detail-merchant">${escapeHtml(row.merchant)}</span>
+                            <strong class="category-detail-amount">${formatYen(row.amount)}</strong>
+                          </div>
+                        </div>
+                      `)
+                      .join('')
+                  : '<div class="category-detail-empty">このカテゴリの明細はありません。</div>'}
+              </div>
+            `
+            : '';
+
+          return `
+            <li class="category-summary-item ${isExpanded ? 'is-open' : ''}">
+              <button class="category-summary-toggle" data-category-name="${escapeHtml(name)}" type="button" aria-expanded="${isExpanded ? 'true' : 'false'}">
+                <span>${escapeHtml(name)} <small>${meta.count}件</small></span>
+                <strong>${formatYen(meta.amount)}</strong>
+              </button>
+              ${detailHtml}
+            </li>
+          `;
+        })
+        .join('')
+    : '<li><span>まだデータがありません</span><strong>—</strong></li>';
+}
+
 function renderSummary(entries) {
   entryCount.textContent = entries.length;
   const total = entries.reduce((sum, entry) => sum + parseMoney(entry.total || 0), 0);
@@ -1123,11 +1215,7 @@ function renderSummary(entries) {
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
-  categoryList.innerHTML = sorted.length
-    ? sorted
-        .map(([name, meta]) => `<li><span>${escapeHtml(name)} <small>${meta.count}件</small></span><strong>${formatYen(meta.amount)}</strong></li>`)
-        .join('')
-    : '<li><span>まだデータがありません</span><strong>—</strong></li>';
+  renderCategorySummaryList(sorted, entries);
 
   const monthValue = String(monthFilterEl?.value || '');
   const ownerLabel = isAllOwnersSelected() ? '全員' : activeOwnerFilters.join(' + ');
@@ -1385,6 +1473,24 @@ function entriesToCsv(entries) {
   });
 
   return '\uFEFF' + rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+}
+
+
+if (categoryList) {
+  categoryList.addEventListener('click', (event) => {
+    const button = event.target.closest('.category-summary-toggle');
+    if (!button) return;
+    const categoryName = String(button.dataset.categoryName || '').trim();
+    if (!categoryName) return;
+
+    if (expandedSummaryCategories.has(categoryName)) {
+      expandedSummaryCategories.delete(categoryName);
+    } else {
+      expandedSummaryCategories.add(categoryName);
+    }
+
+    renderHistory();
+  });
 }
 
 receiptInput.addEventListener('change', async (event) => {
