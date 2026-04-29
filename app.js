@@ -4,6 +4,7 @@ const STORAGE_KEY = 'kakei-bo-ledger-v5';
 const USER_DICT_KEY = 'kakei-bo-user-dict-v1';
 const CATEGORY_CONFIG_KEY = 'kakei-bo-category-config-v1';
 const FAMILY_CONFIG_KEY = 'kakei-bo-family-config-v1';
+const FIXED_COST_CONFIG_KEY = 'kakei-bo-fixed-cost-config-v1';
 
 const DEFAULT_MEMBERS = ['家族共通', '夫', '妻', '子供'];
 
@@ -142,6 +143,7 @@ let previewDataUrl = '';
 let previewDataUrlExtra = '';
 let deferredPrompt = null;
 let currentAnalyzedItemDetails = [];
+let isManualEntryMode = false;
 let activeOwnerFilters = [];
 let expandedSummaryCategories = new Set();
 
@@ -377,7 +379,15 @@ function fillCategoryConfig() {
 function refreshCategoryUi() {
   const categories = getCategoryOrder();
 
-  if (categoryOptionsEl) {
+  if (categoryEl?.tagName === 'SELECT') {
+    const current = normalizeCategory(categoryEl.value);
+    const optionNames = current && !categories.includes(current) ? [...categories, current] : categories;
+    categoryEl.innerHTML = [
+      '<option value="">内容から自動判定</option>',
+      ...optionNames.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+    ].join('');
+    categoryEl.value = current || '';
+  } else if (categoryOptionsEl) {
     categoryOptionsEl.innerHTML = categories.map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
   }
 
@@ -862,7 +872,18 @@ function inferEntryCategory(itemDetails, merchant = '') {
   return inferMerchantCategory(merchant) || '';
 }
 
+function applyReferenceCategoryToItems(itemDetails, category) {
+  const safeCategory = normalizeCategory(category);
+  if (!safeCategory) return itemDetails;
+  return (Array.isArray(itemDetails) ? itemDetails : []).map((detail) => ({
+    ...detail,
+    category: safeCategory,
+    price: ensureSignedAmount(detail.name, safeCategory, detail.price ?? detail.amount ?? 0),
+  }));
+}
+
 function normalizeAnalyzedItems(items, note = '') {
+
   const rawItems = Array.isArray(items) ? items : [];
   const normalized = rawItems
     .map((item) => {
@@ -933,6 +954,7 @@ function resetForm() {
 }
 
 function resetImage() {
+  isManualEntryMode = false;
   selectedFile = null;
   previewDataUrl = '';
   receiptInput.value = '';
@@ -947,6 +969,7 @@ function resetImage() {
 function startManualEntryMode() {
   resetImage();
   resetForm();
+  isManualEntryMode = true;
   const today = new Date();
   const yyyy = String(today.getFullYear());
   const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -989,6 +1012,7 @@ function clearExtraImage() {
 
 async function handleReceiptSelection(file, { extra = false } = {}) {
   if (!file) return;
+  isManualEntryMode = false;
 
   if (extra) {
     selectedFileExtra = file;
@@ -1048,9 +1072,16 @@ function getCategoryBreakdown(entry) {
     ? entry.itemDetails.filter((detail) => detail?.name)
     : [];
 
-  if (!itemDetails.length) return [];
-
   const receiptTotal = parseMoney(entry.total || 0);
+
+  if (!itemDetails.length) {
+    const fallbackCategory = normalizeCategory(entry.category) || inferMerchantCategory(entry.merchant) || '未分類';
+    return [{
+      category: fallbackCategory,
+      amount: receiptTotal,
+      count: 1,
+    }];
+  }
   const normalized = itemDetails.map((detail) => {
     const category =
       normalizeCategory(detail.category) ||
@@ -1114,7 +1145,7 @@ function buildCategoryDetailRows(entries, categoryName) {
       return;
     }
 
-    const fallbackCategory = inferEntryCategory(entry.itemDetails, entry.merchant) || '未分類';
+    const fallbackCategory = normalizeCategory(entry.category) || inferEntryCategory(entry.itemDetails, entry.merchant) || '未分類';
     if (fallbackCategory !== targetCategory) return;
 
     rows.push({
@@ -1580,10 +1611,15 @@ analyzeBtn.addEventListener('click', async () => {
 
 saveBtn.addEventListener('click', async () => {
   const items = itemsEl.value.split('\n').map((v) => v.trim()).filter(Boolean);
-  const itemDetails = deriveItemDetails(items, noteEl.value, currentAnalyzedItemDetails);
   const merchant = merchantEl.value.trim();
   const owners = parseOwnersInput(ownersEl?.value || '');
-  const category = normalizeCategory(categoryEl.value) || inferEntryCategory(itemDetails, merchant) || '未分類';
+  const selectedCategory = normalizeCategory(categoryEl.value);
+  const shouldApplyReferenceCategory = isManualEntryMode && selectedCategory;
+  const derivedItemDetails = deriveItemDetails(items, noteEl.value, currentAnalyzedItemDetails);
+  const itemDetails = shouldApplyReferenceCategory
+    ? applyReferenceCategoryToItems(derivedItemDetails, selectedCategory)
+    : derivedItemDetails;
+  const category = selectedCategory || inferEntryCategory(itemDetails, merchant) || '未分類';
 
   if (!items.length && !merchant && !Number(totalEl.value || 0)) {
     statusEl.textContent = '保存するデータがありません。';
@@ -1932,6 +1968,327 @@ if (resetFamilyConfigBtn) {
   });
 }
 
+
+function getFixedCostsTargetMonth() {
+  return String(monthFilterEl?.value || '') || getCurrentMonthValue();
+}
+
+function loadFixedCosts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FIXED_COST_CONFIG_KEY) || '[]');
+    return Array.isArray(raw) ? raw.map(normalizeFixedCost).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFixedCosts(costs) {
+  const normalized = (Array.isArray(costs) ? costs : []).map(normalizeFixedCost).filter(Boolean);
+  localStorage.setItem(FIXED_COST_CONFIG_KEY, JSON.stringify(normalized));
+}
+
+function normalizeFixedCost(cost) {
+  if (!cost || typeof cost !== 'object') return null;
+  const name = String(cost.name || '').trim();
+  const amount = parseMoney(cost.amount ?? cost.total ?? 0);
+  if (!name || !amount) return null;
+  const category = normalizeCategory(cost.category) || '未分類';
+  const dayRaw = Number.parseInt(cost.day ?? cost.billingDay ?? 1, 10);
+  const day = Math.max(1, Math.min(31, Number.isFinite(dayRaw) ? dayRaw : 1));
+  const owners = parseOwnersInput(cost.owners || cost.owner || ['家族共通']);
+  return {
+    id: String(cost.id || crypto.randomUUID()),
+    name,
+    amount,
+    category,
+    day,
+    owners: owners.length ? owners : ['家族共通'],
+    createdAt: String(cost.createdAt || new Date().toISOString()),
+  };
+}
+
+function buildFixedCostDate(monthValue, day) {
+  const month = /^\d{4}-\d{2}$/.test(String(monthValue || '')) ? String(monthValue) : getCurrentMonthValue();
+  const [year, monthNumber] = month.split('-').map((v) => Number(v));
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  const safeDay = Math.max(1, Math.min(lastDay, Number.parseInt(day || 1, 10) || 1));
+  return `${month}-${String(safeDay).padStart(2, '0')}`;
+}
+
+function getFixedCostCheckedOwners() {
+  const wrap = document.getElementById('fixedCostOwnerPicker');
+  const checked = wrap ? [...wrap.querySelectorAll('.fixed-cost-owner-checkbox:checked')].map((node) => node.value) : [];
+  return checked.length ? checked : ['家族共通'];
+}
+
+function renderFixedCostOwnerPicker(selectedOwners = ['家族共通']) {
+  const wrap = document.getElementById('fixedCostOwnerPicker');
+  if (!wrap) return;
+  const ownerList = parseOwnersInput(selectedOwners);
+  const selected = new Set(ownerList.length ? ownerList : ['家族共通']);
+  wrap.innerHTML = getMemberOrder().map((name) => `
+    <label class="owner-filter-pill">
+      <input type="checkbox" class="fixed-cost-owner-checkbox" value="${escapeHtml(name)}" ${selected.has(name) ? 'checked' : ''} />
+      <span>${escapeHtml(name)}</span>
+    </label>
+  `).join('');
+}
+
+function buildFixedCostCategoryOptions(selectedCategory = '') {
+  const selected = normalizeCategory(selectedCategory);
+  const categories = getCategoryOrder();
+  const options = selected && !categories.includes(selected) ? [...categories, selected] : categories;
+  return options.map((name) => `<option value="${escapeHtml(name)}" ${name === selected ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
+}
+
+function hasFixedCostEntry(entries, cost, monthValue) {
+  const targetDate = buildFixedCostDate(monthValue, cost.day);
+  const targetAmount = parseMoney(cost.amount || 0);
+  return (Array.isArray(entries) ? entries : []).some((entry) => {
+    const sameMonth = matchesMonth(entry, monthValue);
+    if (!sameMonth) return false;
+    if (entry.source === 'fixedCost' && entry.fixedCostId === cost.id) return true;
+    const sameDate = normalizeDate(entry.date) === targetDate;
+    const sameName = String(entry.merchant || '').trim() === cost.name;
+    const sameTotal = parseMoney(entry.total || 0) === targetAmount;
+    const fixedNote = String(entry.note || '').includes('固定費');
+    return sameDate && sameName && sameTotal && fixedNote;
+  });
+}
+
+function buildFixedCostEntry(cost, monthValue) {
+  const date = buildFixedCostDate(monthValue, cost.day);
+  const amount = parseMoney(cost.amount || 0);
+  const category = normalizeCategory(cost.category) || '未分類';
+  const owners = parseOwnersInput(cost.owners);
+  return {
+    id: crypto.randomUUID(),
+    merchant: cost.name,
+    date,
+    total: amount,
+    category,
+    owners: owners.length ? owners : ['家族共通'],
+    items: [cost.name],
+    itemDetails: [{
+      name: cost.name,
+      category,
+      price: ensureSignedAmount(cost.name, category, amount),
+    }],
+    note: '固定費',
+    imageDataUrl: '',
+    createdAt: new Date().toISOString(),
+    source: 'fixedCost',
+    fixedCostId: cost.id,
+    fixedCostMonth: monthValue,
+  };
+}
+
+function setFixedCostStatus(message) {
+  const fixedStatus = document.getElementById('fixedCostStatus');
+  if (fixedStatus) fixedStatus.textContent = message;
+  if (statusEl) statusEl.textContent = message;
+}
+
+function postFixedCostsToMonth(costIds = null) {
+  const monthValue = getFixedCostsTargetMonth();
+  const costs = loadFixedCosts().filter((cost) => !costIds || costIds.includes(cost.id));
+  if (!costs.length) {
+    setFixedCostStatus('計上する固定費がありません。');
+    return;
+  }
+
+  const entries = loadEntries();
+  let addedCount = 0;
+  let skippedCount = 0;
+  costs.forEach((cost) => {
+    if (hasFixedCostEntry(entries, cost, monthValue)) {
+      skippedCount += 1;
+      return;
+    }
+    entries.push(buildFixedCostEntry(cost, monthValue));
+    addedCount += 1;
+  });
+
+  if (addedCount) saveEntries(entries);
+  renderHistory();
+  renderFixedCostManager();
+  setFixedCostStatus(`${monthValue} に固定費を ${addedCount}件計上しました。重複スキップ ${skippedCount}件。`);
+}
+
+function clearFixedCostForm() {
+  const nameEl = document.getElementById('fixedCostName');
+  const amountEl = document.getElementById('fixedCostAmount');
+  const categorySelect = document.getElementById('fixedCostCategory');
+  const dayEl = document.getElementById('fixedCostDay');
+  if (nameEl) nameEl.value = '';
+  if (amountEl) amountEl.value = '';
+  if (categorySelect) categorySelect.value = normalizeCategory(categoryEl?.value) || getCategoryOrder()[0] || '未分類';
+  if (dayEl) dayEl.value = '1';
+  renderFixedCostOwnerPicker(['家族共通']);
+}
+
+function saveFixedCostFromForm() {
+  const nameEl = document.getElementById('fixedCostName');
+  const amountEl = document.getElementById('fixedCostAmount');
+  const categorySelect = document.getElementById('fixedCostCategory');
+  const dayEl = document.getElementById('fixedCostDay');
+
+  const draft = normalizeFixedCost({
+    name: nameEl?.value,
+    amount: amountEl?.value,
+    category: categorySelect?.value,
+    day: dayEl?.value,
+    owners: getFixedCostCheckedOwners(),
+  });
+
+  if (!draft) {
+    setFixedCostStatus('固定費名と金額を入力してください。');
+    return;
+  }
+
+  const costs = loadFixedCosts();
+  const sameIndex = costs.findIndex((cost) => normalizeForSearch(cost.name) === normalizeForSearch(draft.name));
+  if (sameIndex >= 0) {
+    costs[sameIndex] = { ...costs[sameIndex], ...draft, id: costs[sameIndex].id, createdAt: costs[sameIndex].createdAt };
+  } else {
+    costs.push(draft);
+  }
+  saveFixedCosts(costs);
+  renderFixedCostManager();
+  clearFixedCostForm();
+  setFixedCostStatus(sameIndex >= 0 ? '固定費を更新しました。' : '固定費を保存しました。');
+}
+
+function ensureFixedCostSection() {
+  if (document.getElementById('fixedCostsCard')) return document.getElementById('fixedCostsCard');
+  if (!appShell) return null;
+
+  const section = document.createElement('section');
+  section.id = 'fixedCostsCard';
+  section.className = 'card settings-card';
+  const imageSection = pruneImageBeforeBtn?.closest('section');
+  appShell.insertBefore(section, imageSection || null);
+  return section;
+}
+
+function renderFixedCostManager() {
+  const section = ensureFixedCostSection();
+  if (!section) return;
+
+  const costs = loadFixedCosts();
+  const monthValue = getFixedCostsTargetMonth();
+  const entries = loadEntries();
+  const categories = getCategoryOrder();
+  const defaultCategory = normalizeCategory(categoryEl?.value) || categories[0] || '未分類';
+
+  section.innerHTML = `
+    <div class="card-head">
+      <h2>固定費</h2>
+      <p>毎月そのまま計上する経費を保存します。対象月が空の場合は今月に計上します。</p>
+    </div>
+    <form id="fixedCostForm" class="result-form">
+      <label>
+        <span>固定費名</span>
+        <input id="fixedCostName" type="text" placeholder="家賃・保険・通信費など" />
+      </label>
+      <label>
+        <span>金額</span>
+        <input id="fixedCostAmount" type="number" inputmode="decimal" step="1" placeholder="0" />
+      </label>
+      <label>
+        <span>カテゴリ</span>
+        <select id="fixedCostCategory">${buildFixedCostCategoryOptions(defaultCategory)}</select>
+      </label>
+      <label>
+        <span>毎月の計上日</span>
+        <input id="fixedCostDay" type="number" inputmode="numeric" min="1" max="31" step="1" value="1" />
+      </label>
+      <label class="full">
+        <span>対象者</span>
+        <div id="fixedCostOwnerPicker" class="owner-picker"></div>
+      </label>
+    </form>
+    <div class="controls compact-controls">
+      <button id="saveFixedCostBtn" class="primary" type="button">固定費として保存</button>
+      <button id="postFixedCostsBtn" class="ghost" type="button">${escapeHtml(monthValue)} に固定費を計上</button>
+    </div>
+    <div id="fixedCostStatus" class="status">固定費はこの端末に保存されます。すでに同じ月へ計上済みのものは重複スキップします。</div>
+    <div id="fixedCostList" class="history-list" style="margin-top: 12px;">
+      ${costs.length ? costs.map((cost) => {
+        const posted = hasFixedCostEntry(entries, cost, monthValue);
+        return `
+          <div class="history-item" data-fixed-cost-id="${escapeHtml(cost.id)}">
+            <div class="history-top">
+              <div>
+                <h3 class="history-merchant">${escapeHtml(cost.name)}</h3>
+                <div class="history-meta">毎月${Number(cost.day)}日 ・ ${escapeHtml(cost.category)} ・ ${escapeHtml(formatOwners(cost.owners))}${posted ? ` ・ ${escapeHtml(monthValue)}計上済み` : ''}</div>
+              </div>
+              <div class="history-top-right">
+                <div class="history-total">${formatYen(cost.amount)}</div>
+                <div class="controls compact-controls">
+                  <button class="ghost mini fixed-cost-post-one" data-fixed-cost-id="${escapeHtml(cost.id)}" type="button">この月に計上</button>
+                  <button class="ghost danger mini fixed-cost-delete" data-fixed-cost-id="${escapeHtml(cost.id)}" type="button">削除</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('') : '<div class="history-item"><div class="history-meta">まだ固定費がありません。</div></div>'}
+    </div>
+  `;
+
+  renderFixedCostOwnerPicker(['家族共通']);
+
+  document.getElementById('saveFixedCostBtn')?.addEventListener('click', saveFixedCostFromForm);
+  document.getElementById('postFixedCostsBtn')?.addEventListener('click', () => postFixedCostsToMonth());
+  section.querySelectorAll('.fixed-cost-post-one').forEach((button) => {
+    button.addEventListener('click', () => postFixedCostsToMonth([button.dataset.fixedCostId]));
+  });
+  section.querySelectorAll('.fixed-cost-delete').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.fixedCostId;
+      const target = loadFixedCosts().find((cost) => cost.id === id);
+      if (!target) return;
+      if (!confirm(`固定費「${target.name}」を削除しますか？\nすでに計上済みの履歴は残ります。`)) return;
+      saveFixedCosts(loadFixedCosts().filter((cost) => cost.id !== id));
+      renderFixedCostManager();
+      setFixedCostStatus('固定費を削除しました。');
+    });
+  });
+}
+
+function initFixedCostManager() {
+  renderFixedCostManager();
+
+  if (monthFilterEl) {
+    monthFilterEl.addEventListener('change', renderFixedCostManager);
+  }
+
+  if (monthNowBtn) {
+    monthNowBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+
+  if (monthClearBtn) {
+    monthClearBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+
+  if (saveCategoryConfigBtn) {
+    saveCategoryConfigBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+
+  if (resetCategoryConfigBtn) {
+    resetCategoryConfigBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+
+  if (saveFamilyConfigBtn) {
+    saveFamilyConfigBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+
+  if (resetFamilyConfigBtn) {
+    resetFamilyConfigBtn.addEventListener('click', () => setTimeout(renderFixedCostManager, 0));
+  }
+}
+
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   deferredPrompt = event;
@@ -1965,6 +2322,7 @@ refreshOwnerUi();
 refreshCategoryUi();
 if (!ownersEl || !ownersEl.value.trim()) setFormOwners([]);
 if (monthFilterEl) monthFilterEl.value = '';
+initFixedCostManager();
 
 if (isAuthorized()) {
   showApp();

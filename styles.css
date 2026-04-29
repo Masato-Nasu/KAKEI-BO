@@ -14,7 +14,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Yu Gothic", sans-serif; }
 body { min-height: 100vh; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; border: 0; }
 .hidden { display: none !important; }
 .app-shell { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
@@ -45,7 +45,7 @@ button { cursor: pointer; border: 0; }
 .result-form label { display: grid; gap: 8px; }
 .result-form label.full { grid-column: 1 / -1; }
 .result-form span { color: var(--muted); font-size: 13px; }
-.result-form input, .result-form textarea { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; color: var(--text); padding: 13px 14px; outline: none; }
+.result-form input, .result-form textarea, .result-form select { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; color: var(--text); padding: 13px 14px; outline: none; }
 .result-form textarea { resize: vertical; }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .summary-box { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
