@@ -2056,6 +2056,36 @@ function hasFixedCostEntry(entries, cost, monthValue) {
   });
 }
 
+function isEntryFromFixedCost(entry, cost) {
+  if (!entry || !cost) return false;
+  if (entry.source === 'fixedCost' && entry.fixedCostId === cost.id) return true;
+  return false;
+}
+
+function getPostedFixedCostEntriesForMonth(monthValue) {
+  return loadEntries().filter((entry) => entry.source === 'fixedCost' && matchesMonth(entry, monthValue));
+}
+
+function deletePostedFixedCostsForMonth() {
+  const monthValue = getFixedCostsTargetMonth();
+  const entries = loadEntries();
+  const fixedEntries = entries.filter((entry) => entry.source === 'fixedCost' && matchesMonth(entry, monthValue));
+
+  if (!fixedEntries.length) {
+    setFixedCostStatus(`${monthValue} に削除する固定費計上はありません。`);
+    return;
+  }
+
+  if (!confirm(`${monthValue} に計上された固定費 ${fixedEntries.length}件を保存履歴から削除しますか？
+固定費の登録自体は残ります。`)) return;
+
+  const fixedIds = new Set(fixedEntries.map((entry) => entry.id));
+  saveEntries(entries.filter((entry) => !fixedIds.has(entry.id)));
+  renderHistory();
+  renderFixedCostManager();
+  setFixedCostStatus(`${monthValue} の固定費計上を ${fixedEntries.length}件削除しました。`);
+}
+
 function buildFixedCostEntry(cost, monthValue) {
   const date = buildFixedCostDate(monthValue, cost.day);
   const amount = parseMoney(cost.amount || 0);
@@ -2112,7 +2142,11 @@ function postFixedCostsToMonth(costIds = null) {
   if (addedCount) saveEntries(entries);
   renderHistory();
   renderFixedCostManager();
-  setFixedCostStatus(`${monthValue} に固定費を ${addedCount}件計上しました。重複スキップ ${skippedCount}件。`);
+  if (addedCount) {
+    setFixedCostStatus(`${monthValue} に固定費を ${addedCount}件計上しました。重複スキップ ${skippedCount}件。`);
+  } else {
+    setFixedCostStatus(`${monthValue} の固定費はすでに計上済みです。自動では記録しません。`);
+  }
 }
 
 function clearFixedCostForm() {
@@ -2156,7 +2190,10 @@ function saveFixedCostFromForm() {
   saveFixedCosts(costs);
   renderFixedCostManager();
   clearFixedCostForm();
-  setFixedCostStatus(sameIndex >= 0 ? '固定費を更新しました。' : '固定費を保存しました。');
+  const monthValue = getFixedCostsTargetMonth();
+  setFixedCostStatus(sameIndex >= 0
+    ? `固定費を更新しました。${monthValue} に反映するには、内容を確認してから計上ボタンを押してください。`
+    : `固定費を保存しました。${monthValue} に反映するには、内容を確認してから計上ボタンを押してください。`);
 }
 
 function ensureFixedCostSection() {
@@ -2180,6 +2217,18 @@ function renderFixedCostManager() {
   const entries = loadEntries();
   const categories = getCategoryOrder();
   const defaultCategory = normalizeCategory(categoryEl?.value) || categories[0] || '未分類';
+  const fixedEntriesForMonth = getPostedFixedCostEntriesForMonth(monthValue);
+  const unpostedCostsForMonth = costs.filter((cost) => !hasFixedCostEntry(entries, cost, monthValue));
+  const fixedCostStatusMessage = !costs.length
+    ? '固定費はこの端末に保存されます。保存後、対象月を確認してから手動で計上します。'
+    : unpostedCostsForMonth.length
+      ? `${monthValue} の固定費が未計上です（${unpostedCostsForMonth.length}件）。自動では記録しません。内容を確認してからボタンで計上してください。`
+      : `${monthValue} の固定費はすべて計上済みです。自動では記録しません。`;
+  const postButtonLabel = !costs.length
+    ? `${monthValue} に固定費を計上`
+    : unpostedCostsForMonth.length
+      ? `${monthValue} の未計上固定費を計上（${unpostedCostsForMonth.length}件）`
+      : `${monthValue} は計上済み`;
 
   section.innerHTML = `
     <div class="card-head">
@@ -2210,18 +2259,20 @@ function renderFixedCostManager() {
     </form>
     <div class="controls compact-controls">
       <button id="saveFixedCostBtn" class="primary" type="button">固定費として保存</button>
-      <button id="postFixedCostsBtn" class="ghost" type="button">${escapeHtml(monthValue)} に固定費を計上</button>
+      <button id="postFixedCostsBtn" class="ghost" type="button" ${costs.length && !unpostedCostsForMonth.length ? 'disabled' : ''}>${escapeHtml(postButtonLabel)}</button>
+      ${fixedEntriesForMonth.length ? `<button id="removePostedFixedCostsBtn" class="ghost danger" type="button">${escapeHtml(monthValue)} の固定費計上を削除</button>` : ''}
     </div>
-    <div id="fixedCostStatus" class="status">固定費はこの端末に保存されます。すでに同じ月へ計上済みのものは重複スキップします。</div>
+    <div id="fixedCostStatus" class="status">${escapeHtml(fixedCostStatusMessage)}</div>
     <div id="fixedCostList" class="history-list" style="margin-top: 12px;">
       ${costs.length ? costs.map((cost) => {
         const posted = hasFixedCostEntry(entries, cost, monthValue);
+        const postedCount = entries.filter((entry) => isEntryFromFixedCost(entry, cost)).length;
         return `
           <div class="history-item" data-fixed-cost-id="${escapeHtml(cost.id)}">
             <div class="history-top">
               <div>
                 <h3 class="history-merchant">${escapeHtml(cost.name)}</h3>
-                <div class="history-meta">毎月${Number(cost.day)}日 ・ ${escapeHtml(cost.category)} ・ ${escapeHtml(formatOwners(cost.owners))}${posted ? ` ・ ${escapeHtml(monthValue)}計上済み` : ''}</div>
+                <div class="history-meta">毎月${Number(cost.day)}日 ・ ${escapeHtml(cost.category)} ・ ${escapeHtml(formatOwners(cost.owners))} ・ ${posted ? `${escapeHtml(monthValue)}計上済み` : `${escapeHtml(monthValue)}未計上`}${postedCount ? ` ・ 計上履歴${postedCount}件` : ''}</div>
               </div>
               <div class="history-top-right">
                 <div class="history-total">${formatYen(cost.amount)}</div>
@@ -2241,6 +2292,7 @@ function renderFixedCostManager() {
 
   document.getElementById('saveFixedCostBtn')?.addEventListener('click', saveFixedCostFromForm);
   document.getElementById('postFixedCostsBtn')?.addEventListener('click', () => postFixedCostsToMonth());
+  document.getElementById('removePostedFixedCostsBtn')?.addEventListener('click', deletePostedFixedCostsForMonth);
   section.querySelectorAll('.fixed-cost-post-one').forEach((button) => {
     button.addEventListener('click', () => postFixedCostsToMonth([button.dataset.fixedCostId]));
   });
@@ -2249,10 +2301,22 @@ function renderFixedCostManager() {
       const id = button.dataset.fixedCostId;
       const target = loadFixedCosts().find((cost) => cost.id === id);
       if (!target) return;
-      if (!confirm(`固定費「${target.name}」を削除しますか？\nすでに計上済みの履歴は残ります。`)) return;
+      if (!confirm(`固定費「${target.name}」を削除しますか？`)) return;
+
+      const entries = loadEntries();
+      const relatedEntries = entries.filter((entry) => isEntryFromFixedCost(entry, target));
+      const removeRelatedEntries = relatedEntries.length
+        ? confirm(`この固定費から作成された計上済み履歴が ${relatedEntries.length}件あります。\n\nOK：計上済み履歴も削除\nキャンセル：固定費の登録だけ削除`)
+        : false;
+
       saveFixedCosts(loadFixedCosts().filter((cost) => cost.id !== id));
+      if (removeRelatedEntries) {
+        const relatedIds = new Set(relatedEntries.map((entry) => entry.id));
+        saveEntries(entries.filter((entry) => !relatedIds.has(entry.id)));
+      }
+      renderHistory();
       renderFixedCostManager();
-      setFixedCostStatus('固定費を削除しました。');
+      setFixedCostStatus(removeRelatedEntries ? `固定費と計上済み履歴 ${relatedEntries.length}件を削除しました。` : '固定費の登録を削除しました。');
     });
   });
 }
